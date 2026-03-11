@@ -59,8 +59,15 @@ app.get('/health', (req, res) => {
     status: 'ok', 
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    memory: process.memoryUsage(),
+    cpu: process.cpuUsage()
   });
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -69,9 +76,36 @@ if (!token) {
   process.exit(1);
 }
 
-const bot = new TelegramBot(token, { 
-  polling: true
-});
+// Initialize bot with error handling
+let bot;
+try {
+  bot = new TelegramBot(token, { 
+    polling: false // Start with polling false
+  });
+
+  // Clear any existing webhooks
+  bot.deleteWebHook()
+    .then(() => {
+      console.log('✅ Webhook cleared');
+      // Start polling after webhook is cleared
+      return bot.startPolling();
+    })
+    .then(() => {
+      console.log('✅ Bot polling started successfully');
+    })
+    .catch((err) => {
+      console.error('❌ Failed to start polling:', err.message);
+      // Retry after 5 seconds
+      setTimeout(() => {
+        console.log('🔄 Retrying to start polling...');
+        bot.startPolling().catch(e => console.error('Retry failed:', e.message));
+      }, 5000);
+    });
+
+} catch (error) {
+  console.error('❌ Failed to initialize bot:', error);
+  process.exit(1);
+}
 
 const WEBAPP_URL = process.env.WEBAPP_URL || 'https://your-app.railway.app';
 
@@ -85,7 +119,19 @@ global.gameEngine = gameEngine;
 
 // Error handler for bot
 bot.on('polling_error', (error) => {
-  console.error('❌ Telegram polling error:', error);
+  console.error('❌ Telegram polling error:', error.message);
+  if (error.message.includes('409')) {
+    console.log('🔄 Conflict detected, restarting polling in 10 seconds...');
+    setTimeout(() => {
+      bot.stopPolling()
+        .then(() => bot.startPolling())
+        .catch(e => console.error('Restart failed:', e.message));
+    }, 10000);
+  }
+});
+
+bot.on('webhook_error', (error) => {
+  console.error('❌ Telegram webhook error:', error);
 });
 
 // Telegram Bot Commands
@@ -163,6 +209,84 @@ bot.onText(/\/balance/, async (msg) => {
   }
 });
 
+bot.onText(/\/buy/, async (msg) => {
+  const chatId = msg.chat.id;
+  await bot.sendMessage(chatId, '🃏 *Buy Bingo Cards*', {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '🃏 Select Cards', web_app: { url: `${WEBAPP_URL}/select-card.html` } }]
+      ]
+    }
+  });
+});
+
+bot.onText(/\/active/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const games = gameEngine.getActiveGames();
+    let message = '📊 *Active Games*\n\n';
+    
+    if (games.length === 0) {
+      message += 'No active games at the moment.';
+    } else {
+      games.forEach(game => {
+        message += `🎮 Game #${game.id} - ${game.name}\n`;
+        message += `   👥 Players: ${game.players}\n`;
+        message += `   💰 Prize Pool: $${game.prizePool}\n`;
+        message += `   Status: ${game.status}\n\n`;
+      });
+    }
+    
+    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  } catch (error) {
+    bot.sendMessage(chatId, '❌ Error fetching active games');
+  }
+});
+
+bot.onText(/\/leaderboard/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const leaders = await db.getLeaderboard(10);
+    let message = '🏆 *Leaderboard*\n\n';
+    
+    if (leaders.length === 0) {
+      message += 'No winners yet. Be the first!';
+    } else {
+      leaders.forEach((user, index) => {
+        const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '📌';
+        message += `${medal} ${index + 1}. ${user.firstName || 'Player'} - $${user.totalWinnings} (${user.gamesWon} wins)\n`;
+      });
+    }
+    
+    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  } catch (error) {
+    bot.sendMessage(chatId, '❌ Error fetching leaderboard');
+  }
+});
+
+bot.onText(/\/help/, async (msg) => {
+  const chatId = msg.chat.id;
+  const helpMessage = 
+    `❓ *BIG GTO Bingo Help*\n\n` +
+    `*Commands:*\n` +
+    `/start - Start the bot\n` +
+    `/play - Open bingo game\n` +
+    `/balance - Check your balance\n` +
+    `/buy - Buy bingo cards\n` +
+    `/active - Show active games\n` +
+    `/leaderboard - View top winners\n` +
+    `/help - Show this help\n\n` +
+    `*How to Play:*\n` +
+    `1. Buy a card from the shop\n` +
+    `2. Join an active game\n` +
+    `3. Mark numbers as they're called\n` +
+    `4. Call BINGO when you win!\n\n` +
+    `Good luck! 🎯`;
+  
+  await bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
+});
+
 bot.on('callback_query', async (callbackQuery) => {
   const action = callbackQuery.data;
   const chatId = callbackQuery.message.chat.id;
@@ -195,6 +319,30 @@ bot.on('callback_query', async (callbackQuery) => {
         leaders.forEach((user, index) => {
           const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '📌';
           message += `${medal} ${index + 1}. ${user.firstName || 'Player'} - $${user.totalWinnings} (${user.gamesWon} wins)\n`;
+        });
+      }
+      
+      await bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '« Back', callback_data: 'back_to_main' }]
+          ]
+        }
+      });
+    } else if (action === 'history') {
+      const transactions = await db.getTransactionHistory(userId, 5);
+      let message = '📊 *Recent Transactions*\n\n';
+      
+      if (transactions.length === 0) {
+        message += 'No transactions yet.';
+      } else {
+        transactions.forEach(t => {
+          const sign = t.type === 'credit' ? '+' : '-';
+          message += `${t.description}: ${sign}$${t.amount} ($${t.balance})\n`;
+          message += `📅 ${new Date(t.createdAt).toLocaleDateString()}\n\n`;
         });
       }
       
@@ -402,7 +550,7 @@ app.post('/api/join-game', async (req, res) => {
 
 app.get('/api/user-cards/:userId', async (req, res) => {
   try {
-    const cards = await db.getUserCards(req.params.userId);
+    const cards = await db.getUserCards(req.params.userId, 20);
     res.json(cards);
   } catch (error) {
     console.error('Error getting user cards:', error);
@@ -460,7 +608,7 @@ app.post('/api/admin/start-game', adminAuth, (req, res) => {
     }
     
     const result = gameEngine.startGame(gameId);
-    res.json({ success: result });
+    res.json({ success: result, gameId });
   } catch (error) {
     console.error('Error starting game:', error);
     res.status(500).json({ error: error.message });
@@ -476,7 +624,7 @@ app.post('/api/admin/call-number', adminAuth, (req, res) => {
     }
     
     const result = gameEngine.callNumber(gameId, number);
-    res.json({ success: result });
+    res.json({ success: result, gameId, number });
   } catch (error) {
     console.error('Error calling number:', error);
     res.status(500).json({ error: error.message });
@@ -492,7 +640,7 @@ app.post('/api/admin/auto-call', adminAuth, (req, res) => {
     }
     
     const result = gameEngine.startAutoCall(gameId, interval || 5);
-    res.json({ success: result });
+    res.json({ success: result, gameId, interval: interval || 5 });
   } catch (error) {
     console.error('Error starting auto-call:', error);
     res.status(500).json({ error: error.message });
@@ -508,7 +656,7 @@ app.post('/api/admin/stop-auto-call', adminAuth, (req, res) => {
     }
     
     gameEngine.stopAutoCall(gameId);
-    res.json({ success: true });
+    res.json({ success: true, gameId });
   } catch (error) {
     console.error('Error stopping auto-call:', error);
     res.status(500).json({ error: error.message });
@@ -524,7 +672,7 @@ app.post('/api/admin/end-game', adminAuth, (req, res) => {
     }
     
     gameEngine.endGame(gameId);
-    res.json({ success: true });
+    res.json({ success: true, gameId });
   } catch (error) {
     console.error('Error ending game:', error);
     res.status(500).json({ error: error.message });
@@ -615,11 +763,11 @@ app.use((req, res) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`✅ WebApp URL: ${WEBAPP_URL}`);
-  console.log(`✅ Bot is running`);
+  console.log(`✅ Bot initializing...`);
   console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
@@ -627,9 +775,17 @@ server.listen(PORT, '0.0.0.0', () => {
 process.on('SIGTERM', () => {
   console.log('📴 SIGTERM received, shutting down gracefully');
   
+  // Stop bot polling
+  if (bot) {
+    bot.stopPolling()
+      .then(() => console.log('✅ Bot polling stopped'))
+      .catch(err => console.error('Error stopping bot:', err));
+  }
+  
   // Stop all auto-call intervals
   gameEngine.cleanupOldGames();
   
+  // Close server
   server.close(() => {
     console.log('✅ Server closed');
     process.exit(0);
@@ -638,6 +794,13 @@ process.on('SIGTERM', () => {
 
 process.on('SIGINT', () => {
   console.log('📴 SIGINT received, shutting down gracefully');
+  
+  // Stop bot polling
+  if (bot) {
+    bot.stopPolling()
+      .then(() => console.log('✅ Bot polling stopped'))
+      .catch(err => console.error('Error stopping bot:', err));
+  }
   
   server.close(() => {
     console.log('✅ Server closed');
@@ -648,10 +811,12 @@ process.on('SIGINT', () => {
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
   console.error('❌ Uncaught Exception:', err);
+  // Don't exit, just log
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit, just log
 });
 
 module.exports = app;
