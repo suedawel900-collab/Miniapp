@@ -1,5 +1,4 @@
 import sqlite3 from 'sqlite3';
-import { open } from 'sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -97,11 +96,19 @@ class Database {
       )`
     ];
     
-    queries.forEach(query => {
-      this.db.run(query, (err) => {
-        if (err) console.error('Error creating table:', err);
+    // Run each query sequentially
+    for (const query of queries) {
+      await new Promise((resolve, reject) => {
+        this.db.run(query, (err) => {
+          if (err) {
+            console.error('Error creating table:', err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
       });
-    });
+    }
     
     console.log('✅ Tables created/verified');
   }
@@ -118,14 +125,14 @@ class Database {
           this.db.run(
             'INSERT INTO users (userId, firstName, username, balance) VALUES (?, ?, ?, ?)',
             [userId, firstName, username || '', 1000],
-            (err) => {
+            function(err) {
               if (err) {
                 reject(err);
               } else {
                 this.addTransaction(userId, 'welcome', 1000, 1000, 'Welcome bonus');
                 resolve(true);
               }
-            }
+            }.bind(this)
           );
         } else {
           // Update last active
@@ -194,11 +201,14 @@ class Database {
             // Update games played
             this.db.run(
               'UPDATE users SET gamesPlayed = gamesPlayed + 1 WHERE userId = ?',
-              [userId]
+              [userId],
+              (updateErr) => {
+                if (updateErr) console.error('Error updating gamesPlayed:', updateErr);
+              }
             );
             resolve(this.lastID);
           }
-        }
+        }.bind(this)
       );
     });
   }
@@ -235,7 +245,10 @@ class Database {
     this.db.run(
       `INSERT INTO transactions (userId, type, amount, balance, description) 
        VALUES (?, ?, ?, ?, ?)`,
-      [userId, type, amount, balance, description]
+      [userId, type, amount, balance, description],
+      (err) => {
+        if (err) console.error('Error adding transaction:', err);
+      }
     );
   }
   
