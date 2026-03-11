@@ -4,6 +4,7 @@ class GameEngine {
     this.db = db;
     this.games = new Map();
     this.autoCallIntervals = new Map();
+    this.playerGames = new Map(); // Track which game each player is in
     
     // Initialize default games
     this.initGames();
@@ -22,7 +23,8 @@ class GameEngine {
       prizePool: 0,
       cardPrice: 50,
       startTime: null,
-      lastNumber: null
+      lastNumber: null,
+      createdAt: Date.now()
     });
     
     // Game #10 - Traditional Bingo
@@ -37,7 +39,8 @@ class GameEngine {
       prizePool: 0,
       cardPrice: 50,
       startTime: null,
-      lastNumber: null
+      lastNumber: null,
+      createdAt: Date.now()
     });
     
     // Game #1000 - Special Edition
@@ -52,7 +55,8 @@ class GameEngine {
       prizePool: 0,
       cardPrice: 100,
       startTime: null,
-      lastNumber: null
+      lastNumber: null,
+      createdAt: Date.now()
     });
   }
   
@@ -68,7 +72,8 @@ class GameEngine {
         calledNumbers: game.calledNumbers.slice(-20),
         prizePool: game.prizePool,
         cardPrice: game.cardPrice,
-        lastNumber: game.lastNumber
+        lastNumber: game.lastNumber,
+        createdAt: game.createdAt
       };
     }
     return state;
@@ -84,7 +89,8 @@ class GameEngine {
           type: game.type,
           status: game.status,
           players: game.players.size,
-          prizePool: game.prizePool
+          prizePool: game.prizePool,
+          cardPrice: game.cardPrice
         });
       }
     }
@@ -99,51 +105,92 @@ class GameEngine {
       return { success: false, error: 'Game not available' };
     }
     
-    // Get card from database
-    const card = await this.db.getCard(cardId);
-    if (!card) return { success: false, error: 'Card not found' };
-    
-    // Add player to game
-    game.players.set(userId, {
-      userId,
-      cardId,
-      card: JSON.parse(card.cardData),
-      markedNumbers: [],
-      joinedAt: Date.now()
-    });
-    
-    // Add to prize pool
-    game.prizePool += game.cardPrice * 0.8; // 80% goes to prize pool, 20% house fee
-    
-    // Notify all players in game
-    this.io.to(`game_${gameId}`).emit('player_joined', {
-      playerCount: game.players.size
-    });
-    
-    return { 
-      success: true, 
-      game: {
-        id: game.id,
-        type: game.type,
-        calledNumbers: game.calledNumbers,
-        prizePool: game.prizePool
+    try {
+      // Get card from database
+      const card = await this.db.getCard(cardId);
+      if (!card) return { success: false, error: 'Card not found' };
+      
+      // Check if player already in game
+      if (game.players.has(userId)) {
+        return { success: false, error: 'Already in this game' };
       }
-    };
+      
+      // Add player to game
+      game.players.set(userId, {
+        userId,
+        cardId,
+        card: JSON.parse(card.cardData),
+        markedNumbers: [],
+        joinedAt: Date.now()
+      });
+      
+      // Track player's game
+      this.playerGames.set(userId, gameId);
+      
+      // Add to prize pool (80% goes to prize pool, 20% house fee)
+      const contribution = Math.floor(game.cardPrice * 0.8);
+      game.prizePool += contribution;
+      
+      // Notify all players in game
+      this.io.to(`game_${gameId}`).emit('player_joined', {
+        playerCount: game.players.size,
+        prizePool: game.prizePool
+      });
+      
+      console.log(`👤 Player ${userId} joined game ${gameId}`);
+      
+      return { 
+        success: true, 
+        game: {
+          id: game.id,
+          type: game.type,
+          calledNumbers: game.calledNumbers,
+          prizePool: game.prizePool,
+          playerCount: game.players.size
+        }
+      };
+    } catch (error) {
+      console.error('Error joining game:', error);
+      return { success: false, error: 'Internal error' };
+    }
+  }
+  
+  leaveGame(userId, gameId) {
+    const game = this.games.get(gameId);
+    if (!game) return false;
+    
+    if (game.players.delete(userId)) {
+      this.playerGames.delete(userId);
+      this.io.to(`game_${gameId}`).emit('player_left', {
+        playerCount: game.players.size
+      });
+      return true;
+    }
+    
+    return false;
   }
   
   startGame(gameId) {
     const game = this.games.get(gameId);
     if (!game) return false;
     
+    if (game.players.size === 0) {
+      return false;
+    }
+    
     game.status = 'active';
     game.startTime = Date.now();
     game.calledNumbers = [];
-    game.availableNumbers = this.shuffle(game.availableNumbers);
+    game.availableNumbers = this.shuffle([...game.availableNumbers]);
     
     this.io.to(`game_${gameId}`).emit('game_started', {
       gameId,
-      startTime: game.startTime
+      startTime: game.startTime,
+      playerCount: game.players.size,
+      prizePool: game.prizePool
     });
+    
+    console.log(`🎮 Game ${gameId} started with ${game.players.size} players`);
     
     return true;
   }
@@ -154,7 +201,8 @@ class GameEngine {
     
     // Validate number
     number = parseInt(number);
-    if (isNaN(number) || number < 1 || number > 75) return false;
+    const maxNumber = game.type === 'special' ? 90 : 75;
+    if (isNaN(number) || number < 1 || number > maxNumber) return false;
     
     // Check if already called
     if (game.calledNumbers.includes(number)) return false;
@@ -163,14 +211,23 @@ class GameEngine {
     game.calledNumbers.push(number);
     game.lastNumber = number;
     
+    // Remove from available
+    game.availableNumbers = game.availableNumbers.filter(n => n !== number);
+    
     // Notify all players
     this.io.to(`game_${gameId}`).emit('number_called', {
       number,
-      calledNumbers: game.calledNumbers
+      calledNumbers: game.calledNumbers,
+      remaining: game.availableNumbers.length
     });
     
-    // Check for automatic winners
-    this.checkForWinners(gameId);
+    console.log(`🔢 Game ${gameId} called number: ${number}`);
+    
+    // Auto-check for winners (optional)
+    const winners = this.checkForWinners(gameId);
+    if (winners.length > 0) {
+      this.handleAutoWinners(gameId, winners);
+    }
     
     return true;
   }
@@ -188,8 +245,13 @@ class GameEngine {
     const interval = setInterval(() => {
       const game = this.games.get(gameId);
       if (!game || game.status !== 'active') {
-        clearInterval(interval);
-        this.autoCallIntervals.delete(gameId);
+        this.stopAutoCall(gameId);
+        return;
+      }
+      
+      // Check if all numbers called
+      if (game.calledNumbers.length >= (game.type === 'special' ? 90 : 75)) {
+        this.endGame(gameId);
         return;
       }
       
@@ -207,70 +269,99 @@ class GameEngine {
     }, intervalSeconds * 1000);
     
     this.autoCallIntervals.set(gameId, interval);
+    
+    console.log(`⏱️ Auto-call started for game ${gameId} (${intervalSeconds}s interval)`);
+    
     return true;
   }
   
+  stopAutoCall(gameId) {
+    if (this.autoCallIntervals.has(gameId)) {
+      clearInterval(this.autoCallIntervals.get(gameId));
+      this.autoCallIntervals.delete(gameId);
+      console.log(`⏱️ Auto-call stopped for game ${gameId}`);
+    }
+  }
+  
   async validateBingo(userId, cardId, markedNumbers) {
-    const game = this.findGameByPlayer(userId);
+    const gameId = this.playerGames.get(userId);
+    if (!gameId) return false;
+    
+    const game = this.games.get(gameId);
     if (!game) return false;
     
     const player = game.players.get(userId);
     if (!player || player.cardId !== cardId) return false;
     
-    // Check if all numbers in card are marked
-    const card = player.card;
-    
-    if (game.type === 'bingo') {
-      return this.checkTraditionalBingo(card, game.calledNumbers, markedNumbers);
-    } else if (game.type === 'bin50') {
-      return this.checkBinBingo(card, game.calledNumbers, markedNumbers);
-    } else {
-      return this.checkSpecialBingo(card, game.calledNumbers, markedNumbers);
+    try {
+      // Check if all numbers in card are marked
+      const card = player.card;
+      
+      if (game.type === 'bingo') {
+        return this.checkTraditionalBingo(card, game.calledNumbers);
+      } else if (game.type === 'bin50') {
+        return this.checkBinBingo(card, game.calledNumbers);
+      } else if (game.type === 'special') {
+        return this.checkSpecialBingo(card, game.calledNumbers);
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Error validating bingo:', error);
+      return false;
     }
   }
   
-  checkTraditionalBingo(card, calledNumbers, markedNumbers) {
-    // Check for 5 in a row (horizontal, vertical, diagonal)
-    const rows = card.rows || card;
+  checkTraditionalBingo(card, calledNumbers) {
+    const rows = card.numbers || card.rows || card;
     
-    // Check horizontal
+    // Check horizontal lines
     for (let i = 0; i < 5; i++) {
       let count = 0;
       for (let j = 0; j < 5; j++) {
-        const num = rows[i][j];
-        if (num === 'FREE' || calledNumbers.includes(parseInt(num))) {
+        const num = rows[i]?.[j];
+        if (i === 2 && j === 2) { // Free space
+          count++;
+        } else if (num && calledNumbers.includes(parseInt(num))) {
           count++;
         }
       }
       if (count === 5) return true;
     }
     
-    // Check vertical
+    // Check vertical lines
     for (let j = 0; j < 5; j++) {
       let count = 0;
       for (let i = 0; i < 5; i++) {
-        const num = rows[i][j];
-        if (num === 'FREE' || calledNumbers.includes(parseInt(num))) {
+        const num = rows[i]?.[j];
+        if (i === 2 && j === 2) { // Free space
+          count++;
+        } else if (num && calledNumbers.includes(parseInt(num))) {
           count++;
         }
       }
       if (count === 5) return true;
     }
     
-    // Check diagonal
+    // Check diagonals
     let diag1 = 0, diag2 = 0;
     for (let i = 0; i < 5; i++) {
-      const num1 = rows[i][i];
-      const num2 = rows[i][4 - i];
-      if (num1 === 'FREE' || calledNumbers.includes(parseInt(num1))) diag1++;
-      if (num2 === 'FREE' || calledNumbers.includes(parseInt(num2))) diag2++;
+      const num1 = rows[i]?.[i];
+      const num2 = rows[i]?.[4 - i];
+      
+      if (i === 2 && i === 2) { // Center is free space
+        diag1++;
+        diag2++;
+      } else {
+        if (num1 && calledNumbers.includes(parseInt(num1))) diag1++;
+        if (num2 && calledNumbers.includes(parseInt(num2))) diag2++;
+      }
     }
     
     return diag1 === 5 || diag2 === 5;
   }
   
-  checkBinBingo(card, calledNumbers, markedNumbers) {
-    // Bin bingo - any row completely matched
+  checkBinBingo(card, calledNumbers) {
     const rows = card.rows || card;
     
     for (const row of rows) {
@@ -282,49 +373,102 @@ class GameEngine {
     return false;
   }
   
-  checkSpecialBingo(card, calledNumbers, markedNumbers) {
-    // Special pattern - can customize
-    const pattern = card.pattern || 'full';
+  checkSpecialBingo(card, calledNumbers) {
+    const numbers = card.numbers || [];
+    const markedCount = numbers.filter(num => calledNumbers.includes(num)).length;
     
-    if (pattern === 'full') {
-      // All numbers on card
-      const allNumbers = card.numbers || [];
-      return allNumbers.every(num => calledNumbers.includes(num));
+    // Special pattern - 80% of numbers
+    return markedCount >= Math.floor(numbers.length * 0.8);
+  }
+  
+  checkForWinners(gameId) {
+    const game = this.games.get(gameId);
+    if (!game || game.status !== 'active') return [];
+    
+    const winners = [];
+    
+    for (const [userId, player] of game.players) {
+      try {
+        let hasBingo = false;
+        
+        if (game.type === 'bingo') {
+          hasBingo = this.checkTraditionalBingo(player.card, game.calledNumbers);
+        } else if (game.type === 'bin50') {
+          hasBingo = this.checkBinBingo(player.card, game.calledNumbers);
+        } else if (game.type === 'special') {
+          hasBingo = this.checkSpecialBingo(player.card, game.calledNumbers);
+        }
+        
+        if (hasBingo) {
+          winners.push(userId);
+        }
+      } catch (error) {
+        console.error('Error checking winner:', error);
+      }
     }
     
-    return false;
+    return winners;
+  }
+  
+  async handleAutoWinners(gameId, winners) {
+    if (winners.length === 0) return;
+    
+    const game = this.games.get(gameId);
+    if (!game) return;
+    
+    // Take first winner (in case of multiple simultaneous wins)
+    const winnerId = winners[0];
+    const prize = Math.floor(game.prizePool * 0.8);
+    
+    try {
+      await this.db.saveGameResult(gameId, winnerId, prize);
+      await this.db.updateBalance(winnerId, prize);
+      
+      this.io.to(`game_${gameId}`).emit('bingo_winner', {
+        userId: winnerId,
+        prize: prize
+      });
+      
+      console.log(`🏆 Winner in game ${gameId}: ${winnerId} won $${prize}`);
+      
+      this.endGame(gameId);
+    } catch (error) {
+      console.error('Error handling auto winner:', error);
+    }
   }
   
   async processWin(userId, gameId) {
     const game = this.games.get(gameId);
     if (!game) return 0;
     
+    const player = game.players.get(userId);
+    if (!player) return 0;
+    
     // Calculate prize (80% of prize pool)
     const prize = Math.floor(game.prizePool * 0.8);
     
-    // Update player balance
-    await this.db.updateBalance(userId, prize);
-    
-    // Reset prize pool
-    game.prizePool = 0;
-    
-    // End game
-    this.endGame(gameId);
-    
-    return prize;
-  }
-  
-  checkForWinners(gameId) {
-    const game = this.games.get(gameId);
-    if (!game) return;
-    
-    // Auto-check for winners (can be implemented)
-    // For now, players claim BINGO manually
+    try {
+      // Update database
+      await this.db.saveGameResult(gameId, userId, prize);
+      
+      // End game
+      this.endGame(gameId);
+      
+      return prize;
+    } catch (error) {
+      console.error('Error processing win:', error);
+      return 0;
+    }
   }
   
   markNumber(socketId, data) {
-    // Track marked numbers for player
-    this.io.to(socketId).emit('number_marked', data);
+    const game = this.games.get(data.gameId);
+    if (!game) return;
+    
+    const player = game.players.get(data.userId);
+    if (player && !player.markedNumbers.includes(data.number)) {
+      player.markedNumbers.push(data.number);
+    }
   }
   
   endGame(gameId) {
@@ -334,33 +478,34 @@ class GameEngine {
     game.status = 'ended';
     
     // Clear auto-call interval
-    if (this.autoCallIntervals.has(gameId)) {
-      clearInterval(this.autoCallIntervals.get(gameId));
-      this.autoCallIntervals.delete(gameId);
+    this.stopAutoCall(gameId);
+    
+    // Clear player references
+    for (const userId of game.players.keys()) {
+      this.playerGames.delete(userId);
     }
     
     // Notify players
     this.io.to(`game_${gameId}`).emit('game_ended', {
       gameId,
-      finalNumbers: game.calledNumbers
+      finalNumbers: game.calledNumbers,
+      playerCount: game.players.size
     });
     
-    // Reset game after 10 seconds
+    console.log(`🎮 Game ${gameId} ended`);
+    
+    // Reset game after 30 seconds
     setTimeout(() => {
       if (this.games.has(gameId)) {
         this.games.delete(gameId);
         this.initGames(); // Reinitialize
+        console.log(`🔄 Game ${gameId} reset`);
       }
-    }, 10000);
+    }, 30000);
   }
   
-  findGameByPlayer(userId) {
-    for (const [gameId, game] of this.games) {
-      if (game.players.has(userId)) {
-        return game;
-      }
-    }
-    return null;
+  getPlayerGame(userId) {
+    return this.playerGames.get(userId);
   }
   
   shuffle(array) {
@@ -369,6 +514,18 @@ class GameEngine {
       [array[i], array[j]] = [array[j], array[i]];
     }
     return array;
+  }
+  
+  cleanupOldGames() {
+    const now = Date.now();
+    const maxAge = 60 * 60 * 1000; // 1 hour
+    
+    for (const [gameId, game] of this.games) {
+      if (game.status === 'ended' && now - game.createdAt > maxAge) {
+        this.games.delete(gameId);
+        console.log(`🧹 Cleaned up old game ${gameId}`);
+      }
+    }
   }
 }
 
