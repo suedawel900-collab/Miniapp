@@ -1,0 +1,14 @@
+{
+  "name": "real-bingo-game",
+  "version": "1.0.0",
+  "description": "Real Bingo Game for Telegram Mini App",
+  "main": "backend/index.js",
+  "scripts": {
+    "start": "node backend/index.js",
+    "dev": "nodemon backend/index.js",
+    "build": "echo 'Build complete'"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}
