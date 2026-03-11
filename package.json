@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node backend/index.js",
     "build": "cd backend && npm install",
-    "postinstall": "cd backend && npm install || echo 'Backend install failed, continuing...'"
+    "postinstall": "cd backend && npm install"
   },
   "engines": {
     "node": "18.x"
