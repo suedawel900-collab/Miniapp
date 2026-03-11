@@ -10,6 +10,7 @@ class GameEngine {
   }
   
   initGames() {
+    // Game #16 - Bin50 Format
     this.games.set('16', {
       id: '16',
       name: 'BIG GTO',
@@ -25,6 +26,7 @@ class GameEngine {
       createdAt: Date.now()
     });
     
+    // Game #10 - Traditional Bingo
     this.games.set('10', {
       id: '10',
       name: 'BIG GTO',
@@ -40,6 +42,7 @@ class GameEngine {
       createdAt: Date.now()
     });
     
+    // Game #1000 - Special Edition
     this.games.set('1000', {
       id: '1000',
       name: 'BIG GTO SPECIAL',
