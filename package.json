@@ -4,9 +4,9 @@
   "description": "Real Bingo Game for Telegram Mini App",
   "main": "backend/index.js",
   "scripts": {
-    "start": "cd backend && node index.js",
-    "dev": "cd backend && nodemon index.js",
-    "postinstall": "cd backend && npm install"
+    "start": "node backend/index.js",
+    "build": "cd backend && npm install",
+    "postinstall": "cd backend && npm install || echo 'Backend install failed, continuing...'"
   },
   "engines": {
     "node": "18.x"
