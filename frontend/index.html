@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BIG GTO Bingo</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="hero-section">
+            <h1 class="glow-text">🎯 BIG GTO BINGO</h1>
+            <p class="subtitle">Real-time Bingo Gaming</p>
+        </div>
+        
+        <div class="stats-panel">
+            <div class="stat-card">
+                <span class="stat-icon">🎮</span>
+                <span class="stat-label">Active Games</span>
+                <span class="stat-value" id="activeGamesCount">3</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-icon">👥</span>
+                <span class="stat-label">Players</span>
+                <span class="stat-value" id="playersCount">0</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-icon">💰</span>
+                <span class="stat-label">Total Pool</span>
+                <span class="stat-value" id="totalPool">$0</span>
+            </div>
+        </div>
+        
+        <div class="menu-grid">
+            <div class="menu-card" onclick="location.href='game.html'">
+                <div class="menu-icon">🎮</div>
+                <h3>Play Now</h3>
+                <p>Join active games</p>
+                <span class="badge">HOT</span>
+            </div>
+            
+            <div class="menu-card" onclick="location.href='select-card.html'">
+                <div class="menu-icon">🃏</div>
+                <h3>Buy Cards</h3>
+                <p>Purchase bingo cards</p>
+                <span class="badge">NEW</span>
+            </div>
+            
+            <div class="menu-card admin-only" id="adminMenu" style="display: none;" onclick="location.href='admin.html'">
+                <div class="menu-icon">⚙️</div>
+                <h3>Admin Panel</h3>
+                <p>Game management</p>
+            </div>
+        </div>
+        
+        <div class="active-games-section">
+            <h2>🔥 Active Games</h2>
+            <div class="games-list" id="activeGames">
+                <div class="game-item">
+                    <span class="game-id">#16</span>
+                    <span class="game-name">BIG GTO</span>
+                    <span class="game-status waiting">Waiting</span>
+                </div>
+                <div class="game-item">
+                    <span class="game-id">#10</span>
+                    <span class="game-name">BIG GTO</span>
+                    <span class="game-status waiting">Waiting</span>
+                </div>
+                <div class="game-item special">
+                    <span class="game-id">#1000</span>
+                    <span class="game-name">SPECIAL</span>
+                    <span class="game-status waiting">Waiting</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="leaderboard-preview">
+            <h2>🏆 Top Winners</h2>
+            <div id="leaderboardPreview">
+                <div class="leaderboard-item">
+                    <span class="rank">1</span>
+                    <span class="player">Player 1</span>
+                    <span class="winnings">$1,000</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <span class="feature-icon">⚡</span>
+                <span>Real-time</span>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">🎯</span>
+                <span>Fair Play</span>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">💎</span>
+                <span>Big Wins</span>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+        
+        // Check if user is admin (you can modify this)
+        const userId = tg.initDataUnsafe.user?.id;
+        const adminIds = ['YOUR_ADMIN_ID']; // Replace with actual admin IDs
+        
+        if (adminIds.includes(userId?.toString())) {
+            document.getElementById('adminMenu').style.display = 'block';
+        }
+        
+        // Load active games
+        async function loadActiveGames() {
+            try {
+                const response = await fetch('/api/active-games');
+                const games = await response.json();
+                
+                const gamesList = document.getElementById('activeGames');
+                if (games.length > 0) {
+                    gamesList.innerHTML = games.map(game => `
+                        <div class="game-item ${game.type === 'special' ? 'special' : ''}">
+                            <span class="game-id">#${game.id}</span>
+                            <span class="game-name">${game.name}</span>
+                            <span class="game-players">${game.players} players</span>
+                            <span class="game-pool">$${game.prizePool}</span>
+                            <span class="game-status ${game.status}">${game.status}</span>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading games:', error);
+            }
+        }
+        
+        // Load stats
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/game-state');
+                const state = await response.json();
+                
+                let totalPlayers = 0;
+                let totalPool = 0;
+                
+                Object.values(state).forEach(game => {
+                    totalPlayers += game.playerCount;
+                    totalPool += game.prizePool;
+                });
+                
+                document.getElementById('playersCount').textContent = totalPlayers;
+                document.getElementById('totalPool').textContent = `$${totalPool}`;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+        
+        // Load leaderboard
+        async function loadLeaderboard() {
+            try {
+                const response = await fetch('/api/leaderboard');
+                const leaders = await response.json();
+                
+                const preview = document.getElementById('leaderboardPreview');
+                if (leaders.length > 0) {
+                    preview.innerHTML = leaders.slice(0, 3).map((user, index) => `
+                        <div class="leaderboard-item">
+                            <span class="rank">${index + 1}</span>
+                            <span class="player">${user.firstName || 'Player'}</span>
+                            <span class="winnings">$${user.totalWinnings}</span>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading leaderboard:', error);
+            }
+        }
+        
+        // Initialize
+        loadActiveGames();
+        loadStats();
+        loadLeaderboard();
+        
+        // Refresh every 10 seconds
+        setInterval(() => {
+            loadActiveGames();
+            loadStats();
+        }, 10000);
+    </script>
+</body>
+</html>
