@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real Bingo Game - BIG GTO</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header with Game ID and Balance -->
+        <div class="game-header">
+            <div class="game-info-bar">
+                <div class="info-block">
+                    <span class="label">Game ID</span>
+                    <span class="value" id="gameId">7S</span>
+                </div>
+                <div class="info-block">
+                    <span class="label">Balance</span>
+                    <span class="value" id="balance">$1000</span>
+                </div>
+                <div class="info-block">
+                    <span class="label">Prize Pool</span>
+                    <span class="value" id="prizePool">$0</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Game Tabs -->
+        <div class="game-tabs">
+            <button class="tab-btn active" onclick="switchGame('16')">#16 BIG GTO</button>
+            <button class="tab-btn" onclick="switchGame('10')">#10 BIG GTO</button>
+            <button class="tab-btn" onclick="switchGame('1000')">#1000 BIG GTO</button>
+        </div>
+        
+        <!-- Game Status -->
+        <div class="game-status-bar">
+            <div class="status-item">
+                <span class="status-label">Players:</span>
+                <span class="status-value" id="playerCount">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Last Number:</span>
+                <span class="status-value" id="lastNumber">-</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Status:</span>
+                <span class="status-value" id="gameStatus">Waiting</span>
+            </div>
+        </div>
+        
+        <!-- Called Numbers -->
+        <div class="called-numbers-section">
+            <h2>Caused Numbers</h2>
+            <div class="called-numbers-grid" id="calledNumbers">
+                <!-- Numbers will appear here dynamically -->
+            </div>
+        </div>
+        
+        <!-- Bingo Card Display -->
+        <div class="bingo-card-container" id="cardContainer">
+            <div class="card-header">
+                <h3 id="cardTitle">Your Card</h3>
+                <span class="card-id" id="cardId">#---</span>
+            </div>
+            
+            <!-- Traditional Bingo Card (Game #10) -->
+            <div class="bingo-card" id="traditionalCard" style="display: none;">
+                <div class="bingo-header">
+                    <span>B</span><span>I</span><span>N</span><span>G</span><span>O</span>
+                </div>
+                <div id="bingoCardBody"></div>
+            </div>
+            
+            <!-- Bin50 Card (Game #16) -->
+            <div class="bin-card" id="binCard" style="display: none;">
+                <div id="binCardBody"></div>
+            </div>
+            
+            <!-- Special Card (Game #1000) -->
+            <div class="special-card" id="specialCard" style="display: none;">
+                <div id="specialCardBody"></div>
+            </div>
+        </div>
+        
+        <!-- Game Controls -->
+        <div class="game-controls">
+            <button class="bingo-btn" onclick="checkBingo()" id="bingoBtn">
+                🎯 BINGO!
+            </button>
+            <button class="buy-card-btn" onclick="location.href='select-card.html'">
+                🃏 Buy Card
+            </button>
+        </div>
+        
+        <!-- Stats Section -->
+        <div class="stats-section">
+            <h3>Game Statistics</h3>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <span class="stat-label">Numbers Called:</span>
+                    <span class="stat-value" id="numbersCalled">0/75</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Your Marks:</span>
+                    <span class="stat-value" id="yourMarks">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Win Chance:</span>
+                    <span class="stat-value" id="winChance">0%</span>
+                </div>
+            </div>
+        </div>
+        
+        <a href="index.html" class="back-btn">← Back to Menu</a>
+    </div>
+    
+    <script src="game.js"></script>
+    <script>
+        // Initialize Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+        
+        // Load user balance
+        async function loadBalance() {
+            const userId = tg.initDataUnsafe.user?.id;
+            if (userId) {
+                const response = await fetch(`/api/user-balance/${userId}`);
+                const data = await response.json();
+                document.getElementById('balance').textContent = `$${data.balance}`;
+            }
+        }
+        
+        // Load game state
+        async function loadGameState() {
+            const response = await fetch('/api/game-state');
+            const state = await response.json();
+            
+            // Update UI with game state
+            const currentGame = localStorage.getItem('currentGame') || '16';
+            const gameState = state[currentGame];
+            
+            if (gameState) {
+                document.getElementById('prizePool').textContent = `$${gameState.prizePool}`;
+                document.getElementById('playerCount').textContent = gameState.playerCount;
+                document.getElementById('numbersCalled').textContent = `${gameState.calledNumbers.length}/75`;
+            }
+        }
+        
+        // Load saved card
+        function loadCard() {
+            const savedCard = localStorage.getItem('currentCard');
+            if (savedCard) {
+                const card = JSON.parse(savedCard);
+                document.getElementById('cardId').textContent = `#${card.number}`;
+                
+                if (card.type === 'bingo') {
+                    document.getElementById('traditionalCard').style.display = 'block';
+                    renderBingoCard(card);
+                } else if (card.type === 'bin50') {
+                    document.getElementById('binCard').style.display = 'block';
+                    renderBinCard(card);
+                } else if (card.type === 'special') {
+                    document.getElementById('specialCard').style.display = 'block';
+                    renderSpecialCard(card);
+                }
+            }
+        }
+        
+        function renderBingoCard(card) {
+            const body = document.getElementById('bingoCardBody');
+            const numbers = card.numbers || generateBingoNumbers();
+            
+            let html = '';
+            for (let i = 0; i < 5; i++) {
+                html += '<div class="bingo-row">';
+                for (let j = 0; j < 5; j++) {
+                    const num = numbers[i][j];
+                    if (i === 2 && j === 2) {
+                        html += '<span class="number free">★</span>';
+                    } else {
+                        html += `<span class="number bingo-number" data-number="${num}">${num}</span>`;
+                    }
+                }
+                html += '</div>';
+            }
+            body.innerHTML = html;
+        }
+        
+        function renderBinCard(card) {
+            const body = document.getElementById('binCardBody');
+            const rows = card.rows || generateBinNumbers();
+            
+            let html = '<div class="bin-header">#16 Bin(50)</div>';
+            html += '<div class="bin-rows">';
+            rows.forEach(row => {
+                html += `<div class="bin-row">${row.join(' ')}</div>`;
+            });
+            html += '</div>';
+            body.innerHTML = html;
+        }
+        
+        function generateBingoNumbers() {
+            const card = [];
+            for (let col = 0; col < 5; col++) {
+                const min = col * 15 + 1;
+                const max = min + 14;
+                const colNumbers = [];
+                while (colNumbers.length < 5) {
+                    const num = Math.floor(Math.random() * (max - min + 1)) + min;
+                    if (!colNumbers.includes(num)) {
+                        colNumbers.push(num);
+                    }
+                }
+                colNumbers.sort((a, b) => a - b);
+                for (let row = 0; row < 5; row++) {
+                    if (!card[row]) card[row] = [];
+                    card[row][col] = colNumbers[row];
+                }
+            }
+            return card;
+        }
+        
+        function generateBinNumbers() {
+            return [
+                [1, Math.floor(Math.random() * 10000000) + 10000000],
+                [2, Math.floor(Math.random() * 10000000) + 10000000],
+                [3, Math.floor(Math.random() * 100000) + 100000],
+                [4, Math.floor(Math.random() * 100000) + 100000],
+                [5, Math.floor(Math.random() * 10000000) + 10000000]
+            ];
+        }
+        
+        // Initialize
+        loadBalance();
+        loadGameState();
+        loadCard();
+        
+        // Refresh game state every 30 seconds
+        setInterval(loadGameState, 30000);
+    </script>
+</body>
+</html>
