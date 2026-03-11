@@ -194,6 +194,7 @@ class Database {
           if (err) {
             reject(err);
           } else {
+            // Update games played
             this.db.run(
               'UPDATE users SET gamesPlayed = gamesPlayed + 1 WHERE userId = ?',
               [userId],
@@ -280,6 +281,7 @@ class Database {
                 if (err) {
                   reject(err);
                 } else {
+                  // Update leaderboard
                   this.db.run(
                     `INSERT INTO leaderboard (userId, totalWins, totalEarnings, lastUpdated)
                      VALUES (?, 1, ?, CURRENT_TIMESTAMP)
