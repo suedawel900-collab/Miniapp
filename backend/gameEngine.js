@@ -4,14 +4,12 @@ class GameEngine {
     this.db = db;
     this.games = new Map();
     this.autoCallIntervals = new Map();
-    this.playerGames = new Map(); // Track which game each player is in
+    this.playerGames = new Map();
     
-    // Initialize default games
     this.initGames();
   }
   
   initGames() {
-    // Game #16 - Bin50 Format
     this.games.set('16', {
       id: '16',
       name: 'BIG GTO',
@@ -27,7 +25,6 @@ class GameEngine {
       createdAt: Date.now()
     });
     
-    // Game #10 - Traditional Bingo
     this.games.set('10', {
       id: '10',
       name: 'BIG GTO',
@@ -43,7 +40,6 @@ class GameEngine {
       createdAt: Date.now()
     });
     
-    // Game #1000 - Special Edition
     this.games.set('1000', {
       id: '1000',
       name: 'BIG GTO SPECIAL',
@@ -106,16 +102,13 @@ class GameEngine {
     }
     
     try {
-      // Get card from database
       const card = await this.db.getCard(cardId);
       if (!card) return { success: false, error: 'Card not found' };
       
-      // Check if player already in game
       if (game.players.has(userId)) {
         return { success: false, error: 'Already in this game' };
       }
       
-      // Add player to game
       game.players.set(userId, {
         userId,
         cardId,
@@ -124,20 +117,15 @@ class GameEngine {
         joinedAt: Date.now()
       });
       
-      // Track player's game
       this.playerGames.set(userId, gameId);
       
-      // Add to prize pool (80% goes to prize pool, 20% house fee)
       const contribution = Math.floor(game.cardPrice * 0.8);
       game.prizePool += contribution;
       
-      // Notify all players in game
       this.io.to(`game_${gameId}`).emit('player_joined', {
         playerCount: game.players.size,
         prizePool: game.prizePool
       });
-      
-      console.log(`👤 Player ${userId} joined game ${gameId}`);
       
       return { 
         success: true, 
@@ -190,8 +178,6 @@ class GameEngine {
       prizePool: game.prizePool
     });
     
-    console.log(`🎮 Game ${gameId} started with ${game.players.size} players`);
-    
     return true;
   }
   
@@ -199,31 +185,23 @@ class GameEngine {
     const game = this.games.get(gameId);
     if (!game || game.status !== 'active') return false;
     
-    // Validate number
     number = parseInt(number);
     const maxNumber = game.type === 'special' ? 90 : 75;
     if (isNaN(number) || number < 1 || number > maxNumber) return false;
     
-    // Check if already called
     if (game.calledNumbers.includes(number)) return false;
     
-    // Add to called numbers
     game.calledNumbers.push(number);
     game.lastNumber = number;
     
-    // Remove from available
     game.availableNumbers = game.availableNumbers.filter(n => n !== number);
     
-    // Notify all players
     this.io.to(`game_${gameId}`).emit('number_called', {
       number,
       calledNumbers: game.calledNumbers,
       remaining: game.availableNumbers.length
     });
     
-    console.log(`🔢 Game ${gameId} called number: ${number}`);
-    
-    // Auto-check for winners (optional)
     const winners = this.checkForWinners(gameId);
     if (winners.length > 0) {
       this.handleAutoWinners(gameId, winners);
@@ -236,12 +214,10 @@ class GameEngine {
     const game = this.games.get(gameId);
     if (!game) return false;
     
-    // Clear existing interval
     if (this.autoCallIntervals.has(gameId)) {
       clearInterval(this.autoCallIntervals.get(gameId));
     }
     
-    // Start new interval
     const interval = setInterval(() => {
       const game = this.games.get(gameId);
       if (!game || game.status !== 'active') {
@@ -249,13 +225,11 @@ class GameEngine {
         return;
       }
       
-      // Check if all numbers called
       if (game.calledNumbers.length >= (game.type === 'special' ? 90 : 75)) {
         this.endGame(gameId);
         return;
       }
       
-      // Get next random number
       const available = game.availableNumbers.filter(n => !game.calledNumbers.includes(n));
       if (available.length === 0) {
         this.endGame(gameId);
@@ -270,8 +244,6 @@ class GameEngine {
     
     this.autoCallIntervals.set(gameId, interval);
     
-    console.log(`⏱️ Auto-call started for game ${gameId} (${intervalSeconds}s interval)`);
-    
     return true;
   }
   
@@ -279,7 +251,6 @@ class GameEngine {
     if (this.autoCallIntervals.has(gameId)) {
       clearInterval(this.autoCallIntervals.get(gameId));
       this.autoCallIntervals.delete(gameId);
-      console.log(`⏱️ Auto-call stopped for game ${gameId}`);
     }
   }
   
@@ -294,7 +265,6 @@ class GameEngine {
     if (!player || player.cardId !== cardId) return false;
     
     try {
-      // Check if all numbers in card are marked
       const card = player.card;
       
       if (game.type === 'bingo') {
@@ -315,12 +285,11 @@ class GameEngine {
   checkTraditionalBingo(card, calledNumbers) {
     const rows = card.numbers || card.rows || card;
     
-    // Check horizontal lines
     for (let i = 0; i < 5; i++) {
       let count = 0;
       for (let j = 0; j < 5; j++) {
         const num = rows[i]?.[j];
-        if (i === 2 && j === 2) { // Free space
+        if (i === 2 && j === 2) {
           count++;
         } else if (num && calledNumbers.includes(parseInt(num))) {
           count++;
@@ -329,12 +298,11 @@ class GameEngine {
       if (count === 5) return true;
     }
     
-    // Check vertical lines
     for (let j = 0; j < 5; j++) {
       let count = 0;
       for (let i = 0; i < 5; i++) {
         const num = rows[i]?.[j];
-        if (i === 2 && j === 2) { // Free space
+        if (i === 2 && j === 2) {
           count++;
         } else if (num && calledNumbers.includes(parseInt(num))) {
           count++;
@@ -343,13 +311,12 @@ class GameEngine {
       if (count === 5) return true;
     }
     
-    // Check diagonals
     let diag1 = 0, diag2 = 0;
     for (let i = 0; i < 5; i++) {
       const num1 = rows[i]?.[i];
       const num2 = rows[i]?.[4 - i];
       
-      if (i === 2 && i === 2) { // Center is free space
+      if (i === 2 && i === 2) {
         diag1++;
         diag2++;
       } else {
@@ -377,7 +344,6 @@ class GameEngine {
     const numbers = card.numbers || [];
     const markedCount = numbers.filter(num => calledNumbers.includes(num)).length;
     
-    // Special pattern - 80% of numbers
     return markedCount >= Math.floor(numbers.length * 0.8);
   }
   
@@ -416,7 +382,6 @@ class GameEngine {
     const game = this.games.get(gameId);
     if (!game) return;
     
-    // Take first winner (in case of multiple simultaneous wins)
     const winnerId = winners[0];
     const prize = Math.floor(game.prizePool * 0.8);
     
@@ -428,8 +393,6 @@ class GameEngine {
         userId: winnerId,
         prize: prize
       });
-      
-      console.log(`🏆 Winner in game ${gameId}: ${winnerId} won $${prize}`);
       
       this.endGame(gameId);
     } catch (error) {
@@ -444,16 +407,11 @@ class GameEngine {
     const player = game.players.get(userId);
     if (!player) return 0;
     
-    // Calculate prize (80% of prize pool)
     const prize = Math.floor(game.prizePool * 0.8);
     
     try {
-      // Update database
       await this.db.saveGameResult(gameId, userId, prize);
-      
-      // End game
       this.endGame(gameId);
-      
       return prize;
     } catch (error) {
       console.error('Error processing win:', error);
@@ -477,29 +435,22 @@ class GameEngine {
     
     game.status = 'ended';
     
-    // Clear auto-call interval
     this.stopAutoCall(gameId);
     
-    // Clear player references
     for (const userId of game.players.keys()) {
       this.playerGames.delete(userId);
     }
     
-    // Notify players
     this.io.to(`game_${gameId}`).emit('game_ended', {
       gameId,
       finalNumbers: game.calledNumbers,
       playerCount: game.players.size
     });
     
-    console.log(`🎮 Game ${gameId} ended`);
-    
-    // Reset game after 30 seconds
     setTimeout(() => {
       if (this.games.has(gameId)) {
         this.games.delete(gameId);
-        this.initGames(); // Reinitialize
-        console.log(`🔄 Game ${gameId} reset`);
+        this.initGames();
       }
     }, 30000);
   }
@@ -518,15 +469,14 @@ class GameEngine {
   
   cleanupOldGames() {
     const now = Date.now();
-    const maxAge = 60 * 60 * 1000; // 1 hour
+    const maxAge = 60 * 60 * 1000;
     
     for (const [gameId, game] of this.games) {
       if (game.status === 'ended' && now - game.createdAt > maxAge) {
         this.games.delete(gameId);
-        console.log(`🧹 Cleaned up old game ${gameId}`);
       }
     }
   }
 }
 
-export default GameEngine;
+module.exports = GameEngine;
