@@ -1,24 +1,14 @@
 {
-  "name": "bingo-backend",
+  "name": "real-bingo-game",
   "version": "1.0.0",
-  "type": "module",
-  "main": "index.js",
+  "description": "Real Bingo Game for Telegram Mini App",
+  "main": "backend/index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "cd backend && node index.js",
+    "dev": "cd backend && nodemon index.js",
+    "postinstall": "cd backend && npm install"
   },
-  "dependencies": {
-    "express": "^4.18.2",
-    "socket.io": "^4.7.2",
-    "sqlite3": "^5.1.6",
-    "node-telegram-bot-api": "^0.64.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express-rate-limit": "^7.1.5",
-    "helmet": "^7.1.0",
-    "compression": "^1.7.4"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
+  "engines": {
+    "node": "18.x"
   }
 }
