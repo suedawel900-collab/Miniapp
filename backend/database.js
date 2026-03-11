@@ -1,18 +1,14 @@
-import sqlite3 from 'sqlite3';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const sqlite3 = require('sqlite3');
+const path = require('path');
 
 class Database {
   constructor() {
-    this.dbPath = join(__dirname, 'bingo.db');
+    this.dbPath = path.join(__dirname, 'bingo.db');
     this.db = null;
     this.init();
   }
   
-  async init() {
+  init() {
     try {
       this.db = new sqlite3.Database(this.dbPath, (err) => {
         if (err) {
@@ -27,7 +23,7 @@ class Database {
     }
   }
   
-  async createTables() {
+  createTables() {
     const queries = [
       `CREATE TABLE IF NOT EXISTS users (
         userId TEXT PRIMARY KEY,
@@ -97,23 +93,24 @@ class Database {
     ];
     
     // Run each query sequentially
-    for (const query of queries) {
-      await new Promise((resolve, reject) => {
-        this.db.run(query, (err) => {
-          if (err) {
-            console.error('Error creating table:', err);
-            reject(err);
-          } else {
-            resolve();
-          }
-        });
+    const runQuery = (index) => {
+      if (index >= queries.length) {
+        console.log('✅ Tables created/verified');
+        return;
+      }
+      
+      this.db.run(queries[index], (err) => {
+        if (err) {
+          console.error('Error creating table:', err);
+        }
+        runQuery(index + 1);
       });
-    }
+    };
     
-    console.log('✅ Tables created/verified');
+    runQuery(0);
   }
   
-  async registerUser(userId, firstName, username) {
+  registerUser(userId, firstName, username) {
     return new Promise((resolve, reject) => {
       this.db.get('SELECT userId FROM users WHERE userId = ?', [userId], (err, row) => {
         if (err) {
@@ -125,17 +122,16 @@ class Database {
           this.db.run(
             'INSERT INTO users (userId, firstName, username, balance) VALUES (?, ?, ?, ?)',
             [userId, firstName, username || '', 1000],
-            function(err) {
+            (err) => {
               if (err) {
                 reject(err);
               } else {
                 this.addTransaction(userId, 'welcome', 1000, 1000, 'Welcome bonus');
                 resolve(true);
               }
-            }.bind(this)
+            }
           );
         } else {
-          // Update last active
           this.db.run(
             'UPDATE users SET lastActive = CURRENT_TIMESTAMP WHERE userId = ?',
             [userId]
@@ -146,7 +142,7 @@ class Database {
     });
   }
   
-  async getBalance(userId) {
+  getBalance(userId) {
     return new Promise((resolve, reject) => {
       this.db.get('SELECT balance FROM users WHERE userId = ?', [userId], (err, row) => {
         if (err) {
@@ -158,7 +154,7 @@ class Database {
     });
   }
   
-  async updateBalance(userId, amount) {
+  updateBalance(userId, amount) {
     return new Promise(async (resolve, reject) => {
       try {
         const current = await this.getBalance(userId);
@@ -188,7 +184,7 @@ class Database {
     });
   }
   
-  async saveCard(userId, gameId, cardNumber, cardData, price) {
+  saveCard(userId, gameId, cardNumber, cardData, price) {
     return new Promise((resolve, reject) => {
       this.db.run(
         `INSERT INTO cards (userId, gameId, cardNumber, cardType, cardData, price) 
@@ -198,7 +194,6 @@ class Database {
           if (err) {
             reject(err);
           } else {
-            // Update games played
             this.db.run(
               'UPDATE users SET gamesPlayed = gamesPlayed + 1 WHERE userId = ?',
               [userId],
@@ -213,7 +208,7 @@ class Database {
     });
   }
   
-  async getCard(cardId) {
+  getCard(cardId) {
     return new Promise((resolve, reject) => {
       this.db.get('SELECT * FROM cards WHERE id = ?', [cardId], (err, row) => {
         if (err) {
@@ -225,7 +220,7 @@ class Database {
     });
   }
   
-  async getUserCards(userId, limit = 10) {
+  getUserCards(userId, limit = 10) {
     return new Promise((resolve, reject) => {
       this.db.all(
         'SELECT * FROM cards WHERE userId = ? ORDER BY purchasedAt DESC LIMIT ?',
@@ -241,7 +236,7 @@ class Database {
     });
   }
   
-  async addTransaction(userId, type, amount, balance, description) {
+  addTransaction(userId, type, amount, balance, description) {
     this.db.run(
       `INSERT INTO transactions (userId, type, amount, balance, description) 
        VALUES (?, ?, ?, ?, ?)`,
@@ -252,7 +247,7 @@ class Database {
     );
   }
   
-  async getTransactionHistory(userId, limit = 20) {
+  getTransactionHistory(userId, limit = 20) {
     return new Promise((resolve, reject) => {
       this.db.all(
         'SELECT * FROM transactions WHERE userId = ? ORDER BY createdAt DESC LIMIT ?',
@@ -268,7 +263,7 @@ class Database {
     });
   }
   
-  async saveGameResult(gameId, winnerId, prize) {
+  saveGameResult(gameId, winnerId, prize) {
     return new Promise((resolve, reject) => {
       this.db.run(
         `UPDATE games SET status = ?, endedAt = CURRENT_TIMESTAMP, winnerId = ?, winningAmount = ? 
@@ -285,7 +280,6 @@ class Database {
                 if (err) {
                   reject(err);
                 } else {
-                  // Update leaderboard
                   this.db.run(
                     `INSERT INTO leaderboard (userId, totalWins, totalEarnings, lastUpdated)
                      VALUES (?, 1, ?, CURRENT_TIMESTAMP)
@@ -305,7 +299,7 @@ class Database {
     });
   }
   
-  async getLeaderboard(limit = 10) {
+  getLeaderboard(limit = 10) {
     return new Promise((resolve, reject) => {
       this.db.all(
         `SELECT u.userId, u.firstName, u.username, u.gamesWon, u.totalWinnings 
@@ -325,7 +319,7 @@ class Database {
     });
   }
   
-  async getGameHistory(gameId) {
+  getGameHistory(gameId) {
     return new Promise((resolve, reject) => {
       this.db.all(
         'SELECT * FROM called_numbers WHERE gameId = ? ORDER BY calledAt',
@@ -341,7 +335,7 @@ class Database {
     });
   }
   
-  async getUserStats(userId) {
+  getUserStats(userId) {
     return new Promise((resolve, reject) => {
       this.db.get(
         `SELECT 
@@ -364,4 +358,4 @@ class Database {
   }
 }
 
-export default Database;
+module.exports = Database;
