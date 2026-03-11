@@ -3,94 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Buy Bingo Cards - BIG GTO</title>
+    <title>Buy Cards - BIG GTO</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
     <div class="container">
-        <h1>🃏 Buy Bingo Cards</h1>
+        <!-- Header -->
+        <div class="page-header">
+            <button class="back-button" onclick="location.href='index.html'">←</button>
+            <h1>🃏 Buy Bingo Cards</h1>
+            <div class="balance-badge" id="balance">$1000</div>
+        </div>
         
-        <!-- Balance Display -->
-        <div class="balance-card">
-            <span class="balance-label">Your Balance</span>
-            <span class="balance-amount" id="balance">$1000</span>
+        <!-- Game ID Info -->
+        <div class="game-id-info">
+            <span class="label">Game ID:</span>
+            <span class="value">7S</span>
+            <span class="prize-pool">Prize Pool: <span id="prizePool">$0</span></span>
         </div>
         
         <!-- Available Games -->
         <div class="games-section">
-            <h2>Available Games</h2>
+            <h2>Select Game</h2>
             
             <!-- Game #16 -->
-            <div class="game-card" onclick="selectGame('16')">
-                <div class="game-header">
-                    <span class="game-number">#16</span>
+            <div class="game-selector" onclick="showCards('16')">
+                <div class="selector-header">
+                    <span class="game-num">#16</span>
                     <span class="game-name">BIG GTO</span>
                     <span class="game-price">$50</span>
                 </div>
-                <div class="game-preview bin-preview">
-                    <div class="preview-row">1 XXXXXXX</div>
-                    <div class="preview-row">2 XXXXXXX</div>
-                    <div class="preview-row">3 XXXXX</div>
-                    <div class="preview-row">4 XXXXX</div>
-                    <div class="preview-row">5 XXXXXXX</div>
-                </div>
-                <div class="game-stats">
-                    <span>🎮 Players: <span id="game16Players">0</span></span>
-                    <span>💰 Pool: <span id="game16Pool">$0</span></span>
+                <div class="selector-preview">
+                    <span class="preview-text">Bin50 Format</span>
+                    <span class="players">👥 <span id="game16Players">0</span></span>
                 </div>
             </div>
             
             <!-- Game #10 -->
-            <div class="game-card" onclick="selectGame('10')">
-                <div class="game-header">
-                    <span class="game-number">#10</span>
+            <div class="game-selector" onclick="showCards('10')">
+                <div class="selector-header">
+                    <span class="game-num">#10</span>
                     <span class="game-name">BIG GTO</span>
                     <span class="game-price">$50</span>
                 </div>
-                <div class="game-preview bingo-preview">
-                    <table class="mini-bingo">
-                        <tr><th>B</th><th>I</th><th>N</th><th>G</th><th>O</th></tr>
-                        <tr><td>1</td><td>20</td><td>44</td><td>47</td><td>62</td></tr>
-                        <tr><td>2</td><td>19</td><td>35</td><td>48</td><td>65</td></tr>
-                        <tr><td>10</td><td>13</td><td>★</td><td>49</td><td>67</td></tr>
-                    </table>
-                </div>
-                <div class="game-stats">
-                    <span>🎮 Players: <span id="game10Players">0</span></span>
-                    <span>💰 Pool: <span id="game10Pool">$0</span></span>
+                <div class="selector-preview">
+                    <span class="preview-text">Traditional Bingo</span>
+                    <span class="players">👥 <span id="game10Players">0</span></span>
                 </div>
             </div>
             
             <!-- Game #1000 -->
-            <div class="game-card special" onclick="selectGame('1000')">
-                <div class="game-header">
-                    <span class="game-number">#1000</span>
-                    <span class="game-name">BIG GTO SPECIAL</span>
+            <div class="game-selector special" onclick="showCards('1000')">
+                <div class="selector-header">
+                    <span class="game-num">#1000</span>
+                    <span class="game-name">SPECIAL</span>
                     <span class="game-price">$100</span>
                 </div>
-                <div class="game-preview special-preview">
-                    <div class="special-text">⭐ SPECIAL EDITION ⭐</div>
-                    <div class="special-badge">90 Numbers</div>
-                </div>
-                <div class="game-stats">
-                    <span>🎮 Players: <span id="game1000Players">0</span></span>
-                    <span>💰 Pool: <span id="game1000Pool">$0</span></span>
+                <div class="selector-preview">
+                    <span class="preview-text">⭐ 90 Numbers ⭐</span>
+                    <span class="players">👥 <span id="game1000Players">0</span></span>
                 </div>
             </div>
         </div>
         
-        <!-- Card Selection Modal (hidden by default) -->
-        <div class="modal" id="cardModal" style="display: none;">
+        <!-- Card Selection Modal -->
+        <div class="modal" id="cardModal">
             <div class="modal-content">
-                <h3 id="modalTitle">Select Card for Game #<span id="selectedGame"></span></h3>
+                <div class="modal-header">
+                    <h3>Select Card for Game #<span id="selectedGame"></span></h3>
+                    <button class="close-btn" onclick="closeModal()">✕</button>
+                </div>
                 
-                <div class="card-options" id="cardOptions">
+                <div class="cards-grid" id="cardsGrid">
                     <!-- Cards will be generated here -->
                 </div>
                 
-                <div class="modal-actions">
-                    <button class="confirm-btn" onclick="purchaseCard()">Purchase</button>
+                <div class="modal-footer">
                     <button class="cancel-btn" onclick="closeModal()">Cancel</button>
                 </div>
             </div>
@@ -100,11 +89,23 @@
         <div class="recent-section">
             <h3>Recent Cards</h3>
             <div class="recent-list" id="recentCards">
-                <!-- Recent cards will appear here -->
+                <div class="no-cards">No recent purchases</div>
             </div>
         </div>
         
-        <a href="index.html" class="back-btn">← Back to Menu</a>
+        <!-- How to Play -->
+        <div class="how-to-play">
+            <h3>📖 How to Play</h3>
+            <ol>
+                <li>Select a game</li>
+                <li>Choose your card</li>
+                <li>Wait for game to start</li>
+                <li>Mark numbers as they're called</li>
+                <li>Call BINGO when you win!</li>
+            </ol>
+        </div>
+        
+        <a href="index.html" class="back-link">← Back to Menu</a>
     </div>
     
     <script>
@@ -114,31 +115,43 @@
         let selectedGame = null;
         let selectedCard = null;
         let availableCards = [];
+        let userBalance = 1000;
         
-        // Load user balance
+        // Load balance
         async function loadBalance() {
             const userId = tg.initDataUnsafe.user?.id;
             if (userId) {
-                const response = await fetch(`/api/user-balance/${userId}`);
-                const data = await response.json();
-                document.getElementById('balance').textContent = `$${data.balance}`;
+                try {
+                    const response = await fetch(`/api/user-balance/${userId}`);
+                    const data = await response.json();
+                    userBalance = data.balance;
+                    document.getElementById('balance').textContent = `$${data.balance}`;
+                } catch (error) {
+                    console.error('Error loading balance:', error);
+                }
             }
         }
         
         // Load game stats
         async function loadGameStats() {
-            const response = await fetch('/api/game-state');
-            const state = await response.json();
-            
-            document.getElementById('game16Players').textContent = state['16']?.playerCount || 0;
-            document.getElementById('game16Pool').textContent = `$${state['16']?.prizePool || 0}`;
-            document.getElementById('game10Players').textContent = state['10']?.playerCount || 0;
-            document.getElementById('game10Pool').textContent = `$${state['10']?.prizePool || 0}`;
-            document.getElementById('game1000Players').textContent = state['1000']?.playerCount || 0;
-            document.getElementById('game1000Pool').textContent = `$${state['1000']?.prizePool || 0}`;
+            try {
+                const response = await fetch('/api/game-state');
+                const state = await response.json();
+                
+                document.getElementById('game16Players').textContent = state['16']?.playerCount || 0;
+                document.getElementById('game10Players').textContent = state['10']?.playerCount || 0;
+                document.getElementById('game1000Players').textContent = state['1000']?.playerCount || 0;
+                
+                const totalPool = (state['16']?.prizePool || 0) + 
+                                 (state['10']?.prizePool || 0) + 
+                                 (state['1000']?.prizePool || 0);
+                document.getElementById('prizePool').textContent = `$${totalPool}`;
+            } catch (error) {
+                console.error('Error loading game stats:', error);
+            }
         }
         
-        function selectGame(gameId) {
+        function showCards(gameId) {
             selectedGame = gameId;
             document.getElementById('selectedGame').textContent = gameId;
             
@@ -150,35 +163,40 @@
         }
         
         function generateCards(gameId) {
-            const options = document.getElementById('cardOptions');
+            const grid = document.getElementById('cardsGrid');
             availableCards = [];
             
-            let html = '<div class="cards-grid">';
+            let html = '';
+            const cardCount = gameId === '1000' ? 4 : 6;
             
-            // Generate 6 random cards
-            for (let i = 0; i < 6; i++) {
-                const cardId = Math.floor(Math.random() * 1000) + 1;
-                const cardData = generateCardData(gameId, i);
+            for (let i = 0; i < cardCount; i++) {
+                const cardNum = Math.floor(Math.random() * 9000) + 1000;
+                const cardData = generateCardData(gameId);
+                const cardId = `${gameId}-${cardNum}`;
+                
                 availableCards.push({
                     id: cardId,
+                    number: cardNum,
                     data: cardData
                 });
                 
                 html += `
                     <div class="card-option" onclick="selectCard(${i})">
-                        <div class="card-preview small">
+                        <div class="card-preview ${gameId}">
                             ${getCardPreview(gameId, cardData)}
                         </div>
-                        <div class="card-number">#${cardId}</div>
+                        <div class="card-footer">
+                            <span class="card-num">#${cardNum}</span>
+                            <span class="card-price">$${gameId === '1000' ? 100 : 50}</span>
+                        </div>
                     </div>
                 `;
             }
             
-            html += '</div>';
-            options.innerHTML = html;
+            grid.innerHTML = html;
         }
         
-        function generateCardData(gameId, seed) {
+        function generateCardData(gameId) {
             if (gameId === '10') {
                 return generateBingoCard();
             } else if (gameId === '16') {
@@ -213,37 +231,42 @@
             return {
                 type: 'bin50',
                 rows: [
-                    [1, Math.floor(Math.random() * 10000000) + 10000000],
-                    [2, Math.floor(Math.random() * 10000000) + 10000000],
-                    [3, Math.floor(Math.random() * 100000) + 100000],
-                    [4, Math.floor(Math.random() * 100000) + 100000],
-                    [5, Math.floor(Math.random() * 10000000) + 10000000]
+                    [1, Math.floor(Math.random() * 9000000) + 1000000],
+                    [2, Math.floor(Math.random() * 9000000) + 1000000],
+                    [3, Math.floor(Math.random() * 90000) + 10000],
+                    [4, Math.floor(Math.random() * 90000) + 10000],
+                    [5, Math.floor(Math.random() * 9000000) + 1000000]
                 ]
             };
         }
         
         function generateSpecialCard() {
             const numbers = [];
-            for (let i = 0; i < 15; i++) {
-                numbers.push(Math.floor(Math.random() * 90) + 1);
+            while (numbers.length < 15) {
+                const num = Math.floor(Math.random() * 90) + 1;
+                if (!numbers.includes(num)) {
+                    numbers.push(num);
+                }
             }
             return {
                 type: 'special',
-                numbers: numbers,
-                pattern: 'full'
+                numbers: numbers.sort((a, b) => a - b)
             };
         }
         
         function getCardPreview(gameId, cardData) {
             if (gameId === '10') {
                 return `
-                    <div class="mini-bingo-preview">
-                        <div>${cardData.numbers[0][0]} ${cardData.numbers[0][1]} ${cardData.numbers[0][2]} ...</div>
+                    <div class="mini-bingo">
+                        <span>${cardData.numbers[0][0]}</span>
+                        <span>${cardData.numbers[0][1]}</span>
+                        <span>${cardData.numbers[0][2]}</span>
+                        <span>...</span>
                     </div>
                 `;
             } else if (gameId === '16') {
                 return `
-                    <div class="mini-bin-preview">
+                    <div class="mini-bin">
                         <div>${cardData.rows[0][0]} ${cardData.rows[0][1].toString().slice(0,4)}...</div>
                     </div>
                 `;
@@ -253,26 +276,34 @@
         }
         
         function selectCard(index) {
+            // Remove previous selection
             document.querySelectorAll('.card-option').forEach(opt => {
                 opt.classList.remove('selected');
             });
+            
+            // Add selection to clicked card
             document.querySelectorAll('.card-option')[index].classList.add('selected');
             selectedCard = availableCards[index];
         }
         
         function purchaseCard() {
             if (!selectedCard) {
-                tg.showAlert('Please select a card first!');
+                tg.showAlert('Please select a card!');
                 return;
             }
             
             const price = selectedGame === '1000' ? 100 : 50;
             
-            // Send purchase to bot
+            if (userBalance < price) {
+                tg.showAlert(`Insufficient balance! Need $${price}`);
+                return;
+            }
+            
+            // Send to bot
             tg.sendData(JSON.stringify({
                 type: 'BUY_CARD',
                 gameId: selectedGame,
-                cardNumber: selectedCard.id,
+                cardNumber: selectedCard.number,
                 price: price,
                 cardData: selectedCard.data
             }));
@@ -281,13 +312,14 @@
             localStorage.setItem('currentGame', selectedGame);
             localStorage.setItem('currentCard', JSON.stringify({
                 id: selectedCard.id,
-                number: selectedCard.id,
+                number: selectedCard.number,
                 type: selectedGame === '10' ? 'bingo' : (selectedGame === '16' ? 'bin50' : 'special'),
-                numbers: selectedCard.data.numbers || selectedCard.data.rows,
+                numbers: selectedCard.data.numbers,
                 rows: selectedCard.data.rows
             }));
             
-            tg.showAlert(`Card purchased! Redirecting to game...`);
+            // Show success and redirect
+            tg.showAlert('Card purchased! Redirecting...');
             setTimeout(() => {
                 window.location.href = 'game.html';
             }, 1500);
@@ -299,24 +331,26 @@
             selectedCard = null;
         }
         
-        // Load recent cards
+        // Load recent purchases
         async function loadRecentCards() {
             const userId = tg.initDataUnsafe.user?.id;
             if (userId) {
-                const response = await fetch(`/api/user-cards/${userId}`);
-                const cards = await response.json();
-                
-                const recentDiv = document.getElementById('recentCards');
-                if (cards.length > 0) {
-                    recentDiv.innerHTML = cards.slice(0, 3).map(card => `
-                        <div class="recent-item">
-                            <span>Game #${card.gameId}</span>
-                            <span>Card #${card.cardNumber}</span>
-                            <span>$${card.price}</span>
-                        </div>
-                    `).join('');
-                } else {
-                    recentDiv.innerHTML = '<div class="no-cards">No recent purchases</div>';
+                try {
+                    const response = await fetch(`/api/user-cards/${userId}`);
+                    const cards = await response.json();
+                    
+                    const recentDiv = document.getElementById('recentCards');
+                    if (cards.length > 0) {
+                        recentDiv.innerHTML = cards.slice(0, 3).map(card => `
+                            <div class="recent-item">
+                                <span class="game-badge">#${card.gameId}</span>
+                                <span class="card-badge">Card ${card.cardNumber}</span>
+                                <span class="price-badge">$${card.price}</span>
+                            </div>
+                        `).join('');
+                    }
+                } catch (error) {
+                    console.error('Error loading recent cards:', error);
                 }
             }
         }
@@ -328,6 +362,12 @@
         
         // Refresh stats every 10 seconds
         setInterval(loadGameStats, 10000);
+        
+        // Make functions global
+        window.showCards = showCards;
+        window.selectCard = selectCard;
+        window.purchaseCard = purchaseCard;
+        window.closeModal = closeModal;
     </script>
 </body>
 </html>
