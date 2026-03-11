@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - BIG GTO Bingo</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container admin-container">
+        <h1>⚙️ Admin Panel</h1>
+        
+        <!-- Quick Stats -->
+        <div class="admin-stats">
+            <div class="stat-card">
+                <span class="label">Total Players</span>
+                <span class="value" id="totalPlayers">0</span>
+            </div>
+            <div class="stat-card">
+                <span class="label">Active Games</span>
+                <span class="value" id="activeGamesCount">0</span>
+            </div>
+            <div class="stat-card">
+                <span class="label">Total Pool</span>
+                <span class="value" id="totalPool">$0</span>
+            </div>
+        </div>
+        
+        <!-- Game Controls -->
+        <div class="admin-section">
+            <h2>Game Controls</h2>
+            
+            <div class="game-controls-panel">
+                <div class="game-control" id="game16">
+                    <h3>Game #16 - BIG GTO</h3>
+                    <div class="control-buttons">
+                        <button onclick="controlGame('16', 'start')" class="admin-btn success">Start</button>
+                        <button onclick="controlGame('16', 'call')" class="admin-btn primary">Call Number</button>
+                        <button onclick="controlGame('16', 'auto')" class="admin-btn info">Auto (5s)</button>
+                        <button onclick="controlGame('16', 'end')" class="admin-btn danger">End</button>
+                    </div>
+                    <div class="game-status">
+                        Status: <span id="game16Status">Waiting</span>
+                        Players: <span id="game16Players">0</span>
+                        Pool: <span id="game16Pool">$0</span>
+                    </div>
+                </div>
+                
+                <div class="game-control" id="game10">
+                    <h3>Game #10 - BIG GTO</h3>
+                    <div class="control-buttons">
+                        <button onclick="controlGame('10', 'start')" class="admin-btn success">Start</button>
+                        <button onclick="controlGame('10', 'call')" class="admin-btn primary">Call Number</button>
+                        <button onclick="controlGame('10', 'auto')" class="admin-btn info">Auto (5s)</button>
+                        <button onclick="controlGame('10', 'end')" class="admin-btn danger">End</button>
+                    </div>
+                    <div class="game-status">
+                        Status: <span id="game10Status">Waiting</span>
+                        Players: <span id="game10Players">0</span>
+                        Pool: <span id="game10Pool">$0</span>
+                    </div>
+                </div>
+                
+                <div class="game-control" id="game1000">
+                    <h3>Game #1000 - SPECIAL</h3>
+                    <div class="control-buttons">
+                        <button onclick="controlGame('1000', 'start')" class="admin-btn success">Start</button>
+                        <button onclick="controlGame('1000', 'call')" class="admin-btn primary">Call Number</button>
+                        <button onclick="controlGame('1000', 'auto')" class="admin-btn info">Auto (5s)</button>
+                        <button onclick="controlGame('1000', 'end')" class="admin-btn danger">End</button>
+                    </div>
+                    <div class="game-status">
+                        Status: <span id="game1000Status">Waiting</span>
+                        Players: <span id="game1000Players">0</span>
+                        Pool: <span id="game1000Pool">$0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Manual Number Call -->
+        <div class="admin-section">
+            <h2>Manual Number Call</h2>
+            <div class="manual-call">
+                <select id="gameSelect" class="admin-select">
+                    <option value="16">Game #16</option>
+                    <option value="10">Game #10</option>
+                    <option value="1000">Game #1000</option>
+                </select>
+                <input type="number" id="numberInput" min="1" max="90" placeholder="Enter number" class="admin-input">
+                <button onclick="callNumber()" class="admin-btn primary">Call Number</button>
+            </div>
+        </div>
+        
+        <!-- Called Numbers History -->
+        <div class="admin-section">
+            <h2>Called Numbers</h2>
+            <div class="called-history" id="calledHistory">
+                <!-- Numbers will appear here -->
+            </div>
+        </div>
+        
+        <!-- Recent Winners -->
+        <div class="admin-section">
+            <h2>Recent Winners</h2>
+            <div class="winners-list" id="winnersList">
+                <div class="no-data">No winners yet</div>
+            </div>
+        </div>
+        
+        <a href="index.html" class="back-btn">← Back to Menu</a>
+    </div>
+    
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        
+        const socket = io();
+        
+        // Load game state
+        async function loadGameState() {
+            try {
+                const response = await fetch('/api/game-state');
+                const state = await response.json();
+                
+                // Update stats
+                let totalPlayers = 0;
+                let totalPool = 0;
+                let activeGames = 0;
+                
+                Object.entries(state).forEach(([id, game]) => {
+                    totalPlayers += game.playerCount;
+                    totalPool += game.prizePool;
+                    if (game.status === 'active') activeGames++;
+                    
+                    // Update specific game displays
+                    if (document.getElementById(`game${id}Status`)) {
+                        document.getElementById(`game${id}Status`).textContent = 
+                            game.status.charAt(0).toUpperCase() + game.status.slice(1);
+                        document.getElementById(`game${id}Players`).textContent = game.playerCount;
+                        document.getElementById(`game${id}Pool`).textContent = `$${game.prizePool}`;
+                    }
+                });
+                
+                document.getElementById('totalPlayers').textContent = totalPlayers;
+                document.getElementById('totalPool').textContent = `$${totalPool}`;
+                document.getElementById('activeGamesCount').textContent = activeGames;
+                
+                // Update called numbers for selected game
+                const selectedGame = document.getElementById('gameSelect')?.value || '10';
+                if (state[selectedGame]?.calledNumbers) {
+                    updateCalledHistory(state[selectedGame].calledNumbers);
+                }
+            } catch (error) {
+                console.error('Error loading game state:', error);
+            }
+        }
+        
+        function updateCalledHistory(numbers) {
+            const history = document.getElementById('calledHistory');
+            if (numbers.length > 0) {
+                history.innerHTML = numbers.map(num => 
+                    `<span class="called-number">${num}</span>`
+                ).join('');
+            } else {
+                history.innerHTML = '<div class="no-data">No numbers called yet</div>';
+            }
+        }
+        
+        async function controlGame(gameId, action) {
+            try {
+                let endpoint = '';
+                let body = { gameId };
+                
+                switch(action) {
+                    case 'start':
+                        endpoint = '/api/admin/start-game';
+                        break;
+                    case 'call':
+                        const number = prompt('Enter number to call (1-75):');
+                        if (number) {
+                            endpoint = '/api/admin/call-number';
+                            body.number = parseInt(number);
+                        } else {
+                            return;
+                        }
+                        break;
+                    case 'auto':
+                        const interval = prompt('Enter interval in seconds (default 5):', '5');
+                        if (interval) {
+                            endpoint = '/api/admin/auto-call';
+                            body.interval = parseInt(interval);
+                        } else {
+                            return;
+                        }
+                        break;
+                    case 'end':
+                        if (confirm('End this game?')) {
+                            endpoint = '/api/admin/end-game';
+                        } else {
+                            return;
+                        }
+                        break;
+                }
+                
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    tg.showAlert(`Action successful!`);
+                    loadGameState();
+                }
+            } catch (error) {
+                console.error('Error controlling game:', error);
+                tg.showAlert('Error performing action');
+            }
+        }
+        
+        async function callNumber() {
+            const gameId = document.getElementById('gameSelect').value;
+            const number = document.getElementById('numberInput').value;
+            
+            if (!number) {
+                tg.showAlert('Enter a number');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin/call-number', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gameId, number: parseInt(number) })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('numberInput').value = '';
+                    tg.showAlert(`Number ${number} called!`);
+                    loadGameState();
+                }
+            } catch (error) {
+                console.error('Error calling number:', error);
+            }
+        }
+        
+        // Socket listeners
+        socket.on('number_called', (data) => {
+            // Update display for the relevant game
+            loadGameState();
+        });
+        
+        socket.on('game_started', (data) => {
+            tg.showAlert(`Game ${data.gameId} started!`);
+            loadGameState();
+        });
+        
+        socket.on('game_ended', (data) => {
+            tg.showAlert(`Game ${data.gameId} ended`);
+            loadGameState();
+        });
+        
+        socket.on('bingo_winner', (data) => {
+            // Add to winners list
+            const winnersList = document.getElementById('winnersList');
+            const winnerDiv = document.createElement('div');
+            winnerDiv.className = 'winner-item';
+            winnerDiv.innerHTML = `
+                <span>Player ${data.userId.slice(0,8)}</span>
+                <span>won $${data.prize}</span>
+                <span>🎉</span>
+            `;
+            winnersList.prepend(winnerDiv);
+            
+            if (winnersList.children.length > 5) {
+                winnersList.removeChild(winnersList.lastChild);
+            }
+        });
+        
+        // Game select change
+        document.getElementById('gameSelect')?.addEventListener('change', (e) => {
+            const gameId = e.target.value;
+            fetch('/api/game-state')
+                .then(res => res.json())
+                .then(state => {
+                    if (state[gameId]?.calledNumbers) {
+                        updateCalledHistory(state[gameId].calledNumbers);
+                    }
+                });
+        });
+        
+        // Initialize
+        loadGameState();
+        setInterval(loadGameState, 5000);
+        
+        // Make functions global
+        window.controlGame = controlGame;
+        window.callNumber = callNumber;
+    </script>
+</body>
+</html>
