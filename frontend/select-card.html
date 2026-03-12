@@ -13,7 +13,7 @@
         <div class="page-header">
             <button class="back-button" onclick="location.href='index.html'">←</button>
             <h1>🃏 Buy Bingo Cards</h1>
-            <div class="balance-badge" id="balance">$1000</div>
+            <div class="balance-badge" id="balance">Loading...</div>
         </div>
         
         <!-- Game ID Info -->
@@ -85,6 +85,25 @@
             </div>
         </div>
         
+        <!-- Insufficient Balance Modal -->
+        <div class="modal" id="insufficientModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>⚠️ Insufficient Balance</h3>
+                    <button class="close-btn" onclick="closeInsufficientModal()">✕</button>
+                </div>
+                
+                <div class="insufficient-content">
+                    <p>You need <strong id="neededAmount">$50</strong> to purchase this card.</p>
+                    <p>Your current balance: <strong id="currentBalance">$0</strong></p>
+                </div>
+                
+                <div class="modal-footer">
+                    <button class="cancel-btn" onclick="closeInsufficientModal()">Close</button>
+                </div>
+            </div>
+        </div>
+        
         <!-- Recent Purchases -->
         <div class="recent-section">
             <h3>Recent Cards</h3>
@@ -116,22 +135,48 @@
         let selectedGame = null;
         let selectedCard = null;
         let availableCards = [];
-        let userBalance = 1000;
+        let userBalance = 0;
+        let userId = null;
         
-        // Load user balance
+        // Get user ID from Telegram
+        try {
+            userId = tg.initDataUnsafe.user?.id;
+            console.log('User ID:', userId);
+        } catch (error) {
+            console.error('Error getting user ID:', error);
+        }
+        
+        // Load user balance with better error handling
         async function loadBalance() {
-            const userId = tg.initDataUnsafe.user?.id;
-            if (userId) {
-                try {
-                    const response = await fetch(`/api/user-balance/${userId}`);
-                    const data = await response.json();
+            if (!userId) {
+                console.log('No user ID available');
+                document.getElementById('balance').textContent = '$1000 (Demo)';
+                userBalance = 1000;
+                return;
+            }
+            
+            try {
+                console.log('Fetching balance for user:', userId);
+                const response = await fetch(`/api/user-balance/${userId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Balance data:', data);
+                
+                if (data && typeof data.balance !== 'undefined') {
                     userBalance = data.balance;
                     document.getElementById('balance').textContent = `$${data.balance}`;
-                } catch (error) {
-                    console.error('Error loading balance:', error);
-                    // Fallback to demo balance
-                    document.getElementById('balance').textContent = '$1000';
+                } else {
+                    throw new Error('Invalid balance data');
                 }
+            } catch (error) {
+                console.error('Error loading balance:', error);
+                // Fallback to demo balance
+                document.getElementById('balance').textContent = '$1000 (Demo)';
+                userBalance = 1000;
             }
         }
         
@@ -139,7 +184,13 @@
         async function loadGameStats() {
             try {
                 const response = await fetch('/api/game-state');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
                 const state = await response.json();
+                console.log('Game state:', state);
                 
                 document.getElementById('game16Players').textContent = state['16']?.playerCount || 0;
                 document.getElementById('game10Players').textContent = state['10']?.playerCount || 0;
@@ -151,6 +202,11 @@
                 document.getElementById('prizePool').textContent = `$${totalPool}`;
             } catch (error) {
                 console.error('Error loading game stats:', error);
+                // Fallback demo data
+                document.getElementById('game16Players').textContent = '3';
+                document.getElementById('game10Players').textContent = '5';
+                document.getElementById('game1000Players').textContent = '2';
+                document.getElementById('prizePool').textContent = '$350';
             }
         }
         
@@ -298,12 +354,12 @@
                 selectedCard = availableCards[index];
                 console.log('Selected card:', selectedCard);
                 
-                // Show purchase confirmation
-                purchaseCard();
+                // Check balance and purchase
+                checkBalanceAndPurchase();
             }
         }
         
-        async function purchaseCard() {
+        function checkBalanceAndPurchase() {
             if (!selectedCard) {
                 tg.showAlert('Please select a card first!');
                 return;
@@ -313,9 +369,19 @@
             
             // Check balance
             if (userBalance < price) {
-                tg.showAlert(`Insufficient balance! Need $${price}`);
+                // Show insufficient balance modal
+                document.getElementById('neededAmount').textContent = `$${price}`;
+                document.getElementById('currentBalance').textContent = `$${userBalance}`;
+                document.getElementById('insufficientModal').style.display = 'flex';
                 return;
             }
+            
+            // Proceed with purchase
+            purchaseCard();
+        }
+        
+        async function purchaseCard() {
+            const price = selectedGame === '1000' ? 100 : 50;
             
             // Send to bot via Telegram WebApp
             tg.sendData(JSON.stringify({
@@ -357,47 +423,60 @@
             selectedCard = null;
         }
         
+        function closeInsufficientModal() {
+            document.getElementById('insufficientModal').style.display = 'none';
+        }
+        
         // Load recent purchases
         async function loadRecentCards() {
-            const userId = tg.initDataUnsafe.user?.id;
-            if (userId) {
-                try {
-                    const response = await fetch(`/api/user-cards/${userId}`);
-                    const cards = await response.json();
-                    
-                    const recentDiv = document.getElementById('recentCards');
-                    if (cards && cards.length > 0) {
-                        recentDiv.innerHTML = cards.slice(0, 3).map(card => `
-                            <div class="recent-item">
-                                <span class="game-badge">#${card.gameId}</span>
-                                <span class="card-badge">Card ${card.cardNumber}</span>
-                                <span class="price-badge">$${card.price}</span>
-                            </div>
-                        `).join('');
-                    } else {
-                        recentDiv.innerHTML = '<div class="no-cards">No recent purchases</div>';
-                    }
-                } catch (error) {
-                    console.error('Error loading recent cards:', error);
-                    // Show demo recent cards
-                    const recentDiv = document.getElementById('recentCards');
-                    recentDiv.innerHTML = `
-                        <div class="recent-item">
-                            <span class="game-badge">#10</span>
-                            <span class="card-badge">Card 4521</span>
-                            <span class="price-badge">$50</span>
-                        </div>
-                        <div class="recent-item">
-                            <span class="game-badge">#16</span>
-                            <span class="card-badge">Card 7834</span>
-                            <span class="price-badge">$50</span>
-                        </div>
-                    `;
+            if (!userId) {
+                console.log('No user ID for recent cards');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/user-cards/${userId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
+                
+                const cards = await response.json();
+                console.log('Recent cards:', cards);
+                
+                const recentDiv = document.getElementById('recentCards');
+                if (cards && cards.length > 0) {
+                    recentDiv.innerHTML = cards.slice(0, 3).map(card => `
+                        <div class="recent-item">
+                            <span class="game-badge">#${card.gameId}</span>
+                            <span class="card-badge">Card ${card.cardNumber}</span>
+                            <span class="price-badge">$${card.price}</span>
+                        </div>
+                    `).join('');
+                } else {
+                    recentDiv.innerHTML = '<div class="no-cards">No recent purchases</div>';
+                }
+            } catch (error) {
+                console.error('Error loading recent cards:', error);
+                // Show demo recent cards
+                const recentDiv = document.getElementById('recentCards');
+                recentDiv.innerHTML = `
+                    <div class="recent-item">
+                        <span class="game-badge">#10</span>
+                        <span class="card-badge">Card 4521</span>
+                        <span class="price-badge">$50</span>
+                    </div>
+                    <div class="recent-item">
+                        <span class="game-badge">#16</span>
+                        <span class="card-badge">Card 7834</span>
+                        <span class="price-badge">$50</span>
+                    </div>
+                `;
             }
         }
         
         // Initialize
+        console.log('Initializing select-card page...');
         loadBalance();
         loadGameStats();
         loadRecentCards();
@@ -410,6 +489,7 @@
         window.selectCard = selectCard;
         window.purchaseCard = purchaseCard;
         window.closeModal = closeModal;
+        window.closeInsufficientModal = closeInsufficientModal;
     </script>
 </body>
 </html>
