@@ -17,6 +17,16 @@ const Database = require('./database.js');
 const GameEngine = require('./gameEngine.js');
 
 const app = express();
+
+// Trust proxy - important for rate limiting behind Railway
+app.set('trust proxy', 1);
+
+// Debug middleware to log all requests
+app.use((req, res, next) => {
+  console.log(`📡 ${req.method} ${req.url}`);
+  next();
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -40,13 +50,17 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Rate limiting
+// Rate limiting - updated for proxy support
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === '/health'
+  skip: (req) => req.path === '/health',
+  keyGenerator: (req) => {
+    // Use X-Forwarded-For header if behind proxy, otherwise use IP
+    return req.headers['x-forwarded-for'] || req.ip || req.connection.remoteAddress;
+  }
 });
 app.use('/api/', limiter);
 
@@ -65,7 +79,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Root endpoint
+// Root endpoint - serve index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
@@ -713,6 +727,20 @@ app.get('/api/admin/game-details/:gameId', adminAuth, (req, res) => {
   }
 });
 
+// Debug route to list all registered endpoints
+app.get('/api/debug/routes', (req, res) => {
+  const routes = [];
+  app._router.stack.forEach((r) => {
+    if (r.route && r.route.path) {
+      routes.push({
+        path: r.route.path,
+        methods: Object.keys(r.route.methods)
+      });
+    }
+  });
+  res.json(routes);
+});
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
   console.log('🔌 Player connected:', socket.id);
@@ -757,9 +785,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something broke! Please try again later.' });
 });
 
-// 404 handler
+// 404 handler - log and return JSON
 app.use((req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
+  console.log(`❓ 404 Not Found: ${req.method} ${req.url}`);
+  res.status(404).json({ error: 'Endpoint not found', path: req.url, method: req.method });
 });
 
 // Start server
@@ -769,6 +798,14 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ WebApp URL: ${WEBAPP_URL}`);
   console.log(`✅ Bot initializing...`);
   console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Log all registered routes
+  console.log('📋 Registered API Routes:');
+  app._router.stack.forEach((r) => {
+    if (r.route && r.route.path) {
+      console.log(`   ${Object.keys(r.route.methods).join(', ').toUpperCase()} ${r.route.path}`);
+    }
+  });
 });
 
 // Graceful shutdown
