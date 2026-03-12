@@ -149,54 +149,52 @@ try {
   console.error('❌ Error reading directory:', err.message);
 }
 
-// FIX: Serve static files with absolute paths
+// Serve static files
 app.use(express.static(staticPath));
 
-// Explicit routes for HTML files - using absolute paths
+// Redirect favicon.ico to favicon.svg
+app.get('/favicon.ico', (req, res) => {
+  const svgPath = path.join(staticPath, 'favicon.svg');
+  if (fs.existsSync(svgPath)) {
+    res.redirect('/favicon.svg');
+  } else {
+    res.status(204).end();
+  }
+});
+
+// Explicit routes for HTML files
 app.get('/index.html', (req, res) => {
   const filePath = path.join(staticPath, 'index.html');
-  console.log(`🔍 Looking for: ${filePath}`);
   if (fs.existsSync(filePath)) {
-    console.log(`✅ Serving index.html from: ${filePath}`);
     res.sendFile(filePath);
   } else {
-    console.error(`❌ File not found: ${filePath}`);
     res.status(404).send('index.html not found');
   }
 });
 
 app.get('/game.html', (req, res) => {
   const filePath = path.join(staticPath, 'game.html');
-  console.log(`🔍 Looking for: ${filePath}`);
   if (fs.existsSync(filePath)) {
-    console.log(`✅ Serving game.html from: ${filePath}`);
     res.sendFile(filePath);
   } else {
-    console.error(`❌ File not found: ${filePath}`);
     res.status(404).send('game.html not found');
   }
 });
 
 app.get('/select-card.html', (req, res) => {
   const filePath = path.join(staticPath, 'select-card.html');
-  console.log(`🔍 Looking for: ${filePath}`);
   if (fs.existsSync(filePath)) {
-    console.log(`✅ Serving select-card.html from: ${filePath}`);
     res.sendFile(filePath);
   } else {
-    console.error(`❌ File not found: ${filePath}`);
     res.status(404).send('select-card.html not found');
   }
 });
 
 app.get('/admin.html', (req, res) => {
   const filePath = path.join(staticPath, 'admin.html');
-  console.log(`🔍 Looking for: ${filePath}`);
   if (fs.existsSync(filePath)) {
-    console.log(`✅ Serving admin.html from: ${filePath}`);
     res.sendFile(filePath);
   } else {
-    console.error(`❌ File not found: ${filePath}`);
     res.status(404).send('admin.html not found');
   }
 });
@@ -242,7 +240,7 @@ app.get('/', (req, res) => {
   }
 });
 
-// Test page to verify server is working
+// Test page
 app.get('/test', (req, res) => {
   res.send(`
     <html>
@@ -259,6 +257,7 @@ app.get('/test', (req, res) => {
         <p><a href="/select-card.html">Select Card</a></p>
         <p><a href="/admin.html">Admin</a></p>
         <p><a href="/health">Health Check</a></p>
+        <p><a href="/api/debug/users">View All Users</a></p>
       </body>
     </html>
   `);
@@ -286,8 +285,7 @@ app.get('/debug-files', (req, res) => {
         result.fileContents[file] = {
           size: stats.size,
           path: filePath,
-          exists: fs.existsSync(filePath),
-          readable: true
+          exists: fs.existsSync(filePath)
         };
       });
     } catch (e) {
@@ -308,6 +306,190 @@ app.get('/health', (req, res) => {
     webappUrl: WEBAPP_URL,
     staticPath: staticPath,
     staticPathExists: fs.existsSync(staticPath)
+  });
+});
+
+// ============================================
+// DEBUG ROUTES FOR USER BALANCE
+// ============================================
+
+// View all users in database
+app.get('/api/debug/users', (req, res) => {
+  db.db.all('SELECT userId, firstName, username, balance, gamesPlayed, gamesWon, totalWinnings, createdAt FROM users', [], (err, rows) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+    } else {
+      res.json({
+        count: rows.length,
+        users: rows
+      });
+    }
+  });
+});
+
+// Debug route to check user and force registration
+app.get('/api/debug/user/:userId', async (req, res) => {
+  const userId = req.params.userId;
+  
+  try {
+    // Check if user exists
+    const user = await new Promise((resolve, reject) => {
+      db.db.get('SELECT * FROM users WHERE userId = ?', [userId], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+    
+    if (user) {
+      res.json({
+        exists: true,
+        user: user,
+        balance: user.balance,
+        message: 'User exists in database'
+      });
+    } else {
+      // Force register the user
+      await db.registerUser(userId, 'Telegram User', '');
+      
+      // Get the new user
+      const newUser = await new Promise((resolve, reject) => {
+        db.db.get('SELECT * FROM users WHERE userId = ?', [userId], (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
+      });
+      
+      res.json({
+        exists: false,
+        message: 'User was not found, so we registered them with $1000',
+        user: newUser,
+        balance: newUser.balance
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add balance to user (for testing)
+app.post('/api/debug/add-balance', async (req, res) => {
+  const { userId, amount } = req.body;
+  
+  if (!userId || !amount) {
+    return res.status(400).json({ error: 'userId and amount required' });
+  }
+  
+  try {
+    // Check if user exists first
+    const user = await new Promise((resolve, reject) => {
+      db.db.get('SELECT * FROM users WHERE userId = ?', [userId], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+    
+    if (!user) {
+      // Register user first
+      await db.registerUser(userId, 'Telegram User', '');
+    }
+    
+    const newBalance = await db.updateBalance(userId, amount);
+    
+    // Get updated user
+    const updatedUser = await new Promise((resolve, reject) => {
+      db.db.get('SELECT * FROM users WHERE userId = ?', [userId], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+    
+    res.json({ 
+      success: true, 
+      userId, 
+      amountAdded: amount, 
+      previousBalance: user ? user.balance : 0,
+      newBalance: newBalance,
+      user: updatedUser
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reset user balance to 1000
+app.post('/api/debug/reset-balance/:userId', async (req, res) => {
+  const userId = req.params.userId;
+  
+  try {
+    // Check if user exists
+    const user = await new Promise((resolve, reject) => {
+      db.db.get('SELECT * FROM users WHERE userId = ?', [userId], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+    
+    if (!user) {
+      await db.registerUser(userId, 'Telegram User', '');
+    }
+    
+    // Update balance to 1000
+    await new Promise((resolve, reject) => {
+      db.db.run(
+        'UPDATE users SET balance = 1000 WHERE userId = ?',
+        [userId],
+        (err) => {
+          if (err) reject(err);
+          else resolve();
+        }
+      );
+    });
+    
+    // Get updated user
+    const updatedUser = await new Promise((resolve, reject) => {
+      db.db.get('SELECT * FROM users WHERE userId = ?', [userId], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+    
+    res.json({
+      success: true,
+      message: 'Balance reset to $1000',
+      user: updatedUser
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Clear all users (use with caution!)
+app.post('/api/debug/clear-users', (req, res) => {
+  const { secret } = req.body;
+  
+  // Simple protection - use a secret
+  if (secret !== 'clear-bingo-db') {
+    return res.status(403).json({ error: 'Invalid secret' });
+  }
+  
+  db.db.run('DELETE FROM users', (err) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+    } else {
+      db.db.run('DELETE FROM cards', (err) => {
+        if (err) {
+          res.status(500).json({ error: err.message });
+        } else {
+          db.db.run('DELETE FROM transactions', (err) => {
+            if (err) {
+              res.status(500).json({ error: err.message });
+            } else {
+              res.json({ success: true, message: 'All users cleared' });
+            }
+          });
+        }
+      });
+    }
   });
 });
 
@@ -408,6 +590,7 @@ bot.onText(/\/start/, async (msg) => {
     console.log(`🔗 Game URL: ${gameUrl}`);
     console.log(`🔗 Select Card URL: ${selectCardUrl}`);
     console.log(`🔗 Admin URL: ${adminUrl}`);
+    console.log(`💰 User ${user.id} balance: $${balance}`);
     
     await bot.sendMessage(chatId, 
       `🎯 *Welcome to BIG GTO Bingo, ${user.first_name}!*\n\n` +
@@ -701,6 +884,16 @@ bot.on('web_app_data', async (msg) => {
             { parse_mode: 'Markdown' }
           );
         }
+        break;
+        
+      case 'ADD_FUNDS':
+        await db.updateBalance(userId, data.amount);
+        const newBalance = await db.getBalance(userId);
+        await bot.sendMessage(msg.chat.id, 
+          `✅ *$${data.amount} added to your balance!*\n\n` +
+          `💰 New balance: $${newBalance}`,
+          { parse_mode: 'Markdown' }
+        );
         break;
         
       case 'BINGO':
@@ -1016,7 +1209,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something broke! Please try again later.' });
 });
 
-// 404 handler - log and return JSON
+// 404 handler
 app.use((req, res) => {
   console.log(`❓ 404 Not Found: ${req.method} ${req.url}`);
   res.status(404).json({ 
@@ -1044,6 +1237,9 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`   - /game.html - Game page`);
   console.log(`   - /select-card.html - Buy cards page`);
   console.log(`   - /admin.html - Admin page`);
+  console.log(`   - /api/debug/users - View all users`);
+  console.log(`   - /api/debug/user/:userId - Check/register user`);
+  console.log(`   - POST /api/debug/add-balance - Add balance to user`);
 });
 
 // Graceful shutdown
@@ -1086,12 +1282,10 @@ process.on('SIGINT', () => {
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
   console.error('❌ Uncaught Exception:', err);
-  // Don't exit, just log
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-  // Don't exit, just log
 });
 
 module.exports = app;
