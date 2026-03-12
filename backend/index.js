@@ -27,6 +27,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// Fix for double slashes in URLs
+app.use((req, res, next) => {
+  // Replace double slashes with single slash (except for protocol)
+  if (req.url.includes('//')) {
+    const originalUrl = req.url;
+    req.url = req.url.replace(/\/+/g, '/');
+    console.log(`🔧 Fixed URL: ${originalUrl} -> ${req.url}`);
+  }
+  next();
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -64,8 +75,27 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Static files
+// Static files - serve HTML files directly
 app.use(express.static(path.join(__dirname, '../frontend')));
+
+// Handle HTML files without extensions
+app.use((req, res, next) => {
+  // If the request is for a path without extension and doesn't start with /api
+  if (!req.path.startsWith('/api') && !req.path.includes('.')) {
+    const possiblePath = path.join(__dirname, '../frontend', req.path + '.html');
+    // Check if the HTML file exists
+    if (require('fs').existsSync(possiblePath)) {
+      return res.sendFile(possiblePath);
+    }
+  }
+  next();
+});
+
+// Clean WEBAPP_URL - remove any trailing slashes
+const rawWebAppUrl = process.env.WEBAPP_URL || 'https://your-app.railway.app';
+const WEBAPP_URL = rawWebAppUrl.replace(/\/+$/, ''); // Remove trailing slashes
+
+console.log(`🌐 WebApp URL configured as: ${WEBAPP_URL}`);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -75,7 +105,8 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
     memory: process.memoryUsage(),
-    cpu: process.cpuUsage()
+    cpu: process.cpuUsage(),
+    webappUrl: WEBAPP_URL
   });
 });
 
@@ -120,8 +151,6 @@ try {
   console.error('❌ Failed to initialize bot:', error);
   process.exit(1);
 }
-
-const WEBAPP_URL = process.env.WEBAPP_URL || 'https://your-app.railway.app';
 
 // Initialize database and game engine
 const db = new Database();
@@ -171,6 +200,13 @@ bot.onText(/\/start/, async (msg) => {
     await db.registerUser(user.id, user.first_name, user.username);
     const balance = await db.getBalance(user.id);
     
+    // Ensure no double slashes in URLs
+    const gameUrl = `${WEBAPP_URL}/game.html`;
+    const selectCardUrl = `${WEBAPP_URL}/select-card.html`;
+    
+    console.log(`🔗 Game URL: ${gameUrl}`);
+    console.log(`🔗 Select Card URL: ${selectCardUrl}`);
+    
     await bot.sendMessage(chatId, 
       `🎯 *Welcome to BIG GTO Bingo, ${user.first_name}!*\n\n` +
       `💰 Your balance: *$${balance}*\n\n` +
@@ -179,8 +215,8 @@ bot.onText(/\/start/, async (msg) => {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
-            [{ text: '🎮 Play Bingo', web_app: { url: `${WEBAPP_URL}/game.html` } }],
-            [{ text: '🃏 Buy Cards', web_app: { url: `${WEBAPP_URL}/select-card.html` } }],
+            [{ text: '🎮 Play Bingo', web_app: { url: gameUrl } }],
+            [{ text: '🃏 Buy Cards', web_app: { url: selectCardUrl } }],
             [{ text: '💰 Add Funds', callback_data: 'add_funds' }],
             [{ text: '🏆 Leaderboard', callback_data: 'leaderboard' }]
           ]
@@ -195,11 +231,27 @@ bot.onText(/\/start/, async (msg) => {
 
 bot.onText(/\/play/, async (msg) => {
   const chatId = msg.chat.id;
+  const gameUrl = `${WEBAPP_URL}/game.html`;
+  
   await bot.sendMessage(chatId, '🎮 *Launching Bingo Game...*', {
     parse_mode: 'Markdown',
     reply_markup: {
       inline_keyboard: [
-        [{ text: '🎮 Open Bingo Game', web_app: { url: `${WEBAPP_URL}/game.html` } }]
+        [{ text: '🎮 Open Bingo Game', web_app: { url: gameUrl } }]
+      ]
+    }
+  });
+});
+
+bot.onText(/\/buy/, async (msg) => {
+  const chatId = msg.chat.id;
+  const selectCardUrl = `${WEBAPP_URL}/select-card.html`;
+  
+  await bot.sendMessage(chatId, '🃏 *Buy Bingo Cards*', {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '🃏 Select Cards', web_app: { url: selectCardUrl } }]
       ]
     }
   });
@@ -221,18 +273,6 @@ bot.onText(/\/balance/, async (msg) => {
   } catch (error) {
     bot.sendMessage(chatId, '❌ Error fetching balance');
   }
-});
-
-bot.onText(/\/buy/, async (msg) => {
-  const chatId = msg.chat.id;
-  await bot.sendMessage(chatId, '🃏 *Buy Bingo Cards*', {
-    parse_mode: 'Markdown',
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: '🃏 Select Cards', web_app: { url: `${WEBAPP_URL}/select-card.html` } }]
-      ]
-    }
-  });
 });
 
 bot.onText(/\/active/, async (msg) => {
@@ -372,6 +412,9 @@ bot.on('callback_query', async (callbackQuery) => {
       });
     } else if (action === 'back_to_main') {
       const balance = await db.getBalance(userId);
+      const gameUrl = `${WEBAPP_URL}/game.html`;
+      const selectCardUrl = `${WEBAPP_URL}/select-card.html`;
+      
       await bot.editMessageText(
         `🎯 *Welcome back!*\n\n` +
         `💰 Your balance: *$${balance}*\n\n` +
@@ -382,8 +425,8 @@ bot.on('callback_query', async (callbackQuery) => {
           parse_mode: 'Markdown',
           reply_markup: {
             inline_keyboard: [
-              [{ text: '🎮 Play Bingo', web_app: { url: `${WEBAPP_URL}/game.html` } }],
-              [{ text: '🃏 Buy Cards', web_app: { url: `${WEBAPP_URL}/select-card.html` } }],
+              [{ text: '🎮 Play Bingo', web_app: { url: gameUrl } }],
+              [{ text: '🃏 Buy Cards', web_app: { url: selectCardUrl } }],
               [{ text: '💰 Add Funds', callback_data: 'add_funds' }],
               [{ text: '🏆 Leaderboard', callback_data: 'leaderboard' }]
             ]
@@ -741,6 +784,17 @@ app.get('/api/debug/routes', (req, res) => {
   res.json(routes);
 });
 
+// Debug route to check configuration
+app.get('/api/debug/config', (req, res) => {
+  res.json({
+    webappUrl: WEBAPP_URL,
+    rawWebappUrl: process.env.WEBAPP_URL,
+    nodeEnv: process.env.NODE_ENV,
+    port: process.env.PORT,
+    hasTrailingSlash: WEBAPP_URL.endsWith('/')
+  });
+});
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
   console.log('🔌 Player connected:', socket.id);
@@ -788,7 +842,12 @@ app.use((err, req, res, next) => {
 // 404 handler - log and return JSON
 app.use((req, res) => {
   console.log(`❓ 404 Not Found: ${req.method} ${req.url}`);
-  res.status(404).json({ error: 'Endpoint not found', path: req.url, method: req.method });
+  res.status(404).json({ 
+    error: 'Endpoint not found', 
+    path: req.url, 
+    method: req.method,
+    note: 'If you were trying to access an HTML page, make sure the URL is correct and the file exists in the frontend folder.'
+  });
 });
 
 // Start server
@@ -806,6 +865,23 @@ server.listen(PORT, '0.0.0.0', () => {
       console.log(`   ${Object.keys(r.route.methods).join(', ').toUpperCase()} ${r.route.path}`);
     }
   });
+  
+  // Check frontend files
+  const fs = require('fs');
+  const frontendPath = path.join(__dirname, '../frontend');
+  console.log(`📁 Frontend directory: ${frontendPath}`);
+  
+  if (fs.existsSync(frontendPath)) {
+    const files = fs.readdirSync(frontendPath);
+    console.log('📄 Frontend files:');
+    files.forEach(file => {
+      if (file.endsWith('.html')) {
+        console.log(`   - ${file} -> ${WEBAPP_URL}/${file}`);
+      }
+    });
+  } else {
+    console.error('❌ Frontend directory not found!');
+  }
 });
 
 // Graceful shutdown
