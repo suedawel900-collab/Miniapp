@@ -96,6 +96,7 @@
                 <div class="insufficient-content">
                     <p>You need <strong id="neededAmount">$50</strong> to purchase this card.</p>
                     <p>Your current balance: <strong id="currentBalance">$0</strong></p>
+                    <p style="margin-top: 20px; font-size: 14px; color: #666;">Add funds via the bot to continue playing.</p>
                 </div>
                 
                 <div class="modal-footer">
@@ -128,55 +129,76 @@
     </div>
     
     <script>
+        // Initialize Telegram WebApp
         const tg = window.Telegram.WebApp;
         tg.expand();
         tg.ready();
         
+        // Global variables
         let selectedGame = null;
         let selectedCard = null;
         let availableCards = [];
         let userBalance = 0;
         let userId = null;
+        let retryCount = 0;
+        const MAX_RETRIES = 3;
         
         // Get user ID from Telegram
         try {
-            userId = tg.initDataUnsafe.user?.id;
-            console.log('User ID:', userId);
+            const user = tg.initDataUnsafe.user;
+            if (user && user.id) {
+                userId = user.id;
+                console.log('✅ User ID:', userId);
+            } else {
+                console.warn('⚠️ No user ID from Telegram');
+                // For testing/demo mode
+                userId = 'demo-user-123';
+            }
         } catch (error) {
-            console.error('Error getting user ID:', error);
+            console.error('❌ Error getting user ID:', error);
         }
         
-        // Load user balance with better error handling
+        // Load user balance with retry logic
         async function loadBalance() {
             if (!userId) {
-                console.log('No user ID available');
-                document.getElementById('balance').textContent = '$1000 (Demo)';
+                console.log('⚠️ No user ID, using demo balance');
                 userBalance = 1000;
+                document.getElementById('balance').textContent = '$1000 (Demo)';
                 return;
             }
             
             try {
-                console.log('Fetching balance for user:', userId);
+                console.log('📡 Fetching balance for user:', userId);
                 const response = await fetch(`/api/user-balance/${userId}`);
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    throw new Error(`HTTP ${response.status}`);
                 }
                 
                 const data = await response.json();
-                console.log('Balance data:', data);
+                console.log('📊 Balance data:', data);
                 
                 if (data && typeof data.balance !== 'undefined') {
                     userBalance = data.balance;
                     document.getElementById('balance').textContent = `$${data.balance}`;
+                    retryCount = 0; // Reset retry count on success
                 } else {
                     throw new Error('Invalid balance data');
                 }
             } catch (error) {
-                console.error('Error loading balance:', error);
-                // Fallback to demo balance
-                document.getElementById('balance').textContent = '$1000 (Demo)';
-                userBalance = 1000;
+                console.error('❌ Error loading balance:', error);
+                
+                // Retry logic
+                if (retryCount < MAX_RETRIES) {
+                    retryCount++;
+                    console.log(`🔄 Retry ${retryCount}/${MAX_RETRIES} in 2 seconds...`);
+                    setTimeout(loadBalance, 2000);
+                } else {
+                    // Fallback to demo balance
+                    userBalance = 1000;
+                    document.getElementById('balance').textContent = '$1000 (Demo)';
+                    console.log('⚠️ Using demo balance after failed retries');
+                }
             }
         }
         
@@ -186,11 +208,11 @@
                 const response = await fetch('/api/game-state');
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    throw new Error(`HTTP ${response.status}`);
                 }
                 
                 const state = await response.json();
-                console.log('Game state:', state);
+                console.log('🎮 Game state:', state);
                 
                 document.getElementById('game16Players').textContent = state['16']?.playerCount || 0;
                 document.getElementById('game10Players').textContent = state['10']?.playerCount || 0;
@@ -201,7 +223,7 @@
                                  (state['1000']?.prizePool || 0);
                 document.getElementById('prizePool').textContent = `$${totalPool}`;
             } catch (error) {
-                console.error('Error loading game stats:', error);
+                console.error('❌ Error loading game stats:', error);
                 // Fallback demo data
                 document.getElementById('game16Players').textContent = '3';
                 document.getElementById('game10Players').textContent = '5';
@@ -352,7 +374,7 @@
             if (selectedElement) {
                 selectedElement.classList.add('selected');
                 selectedCard = availableCards[index];
-                console.log('Selected card:', selectedCard);
+                console.log('✅ Selected card:', selectedCard);
                 
                 // Check balance and purchase
                 checkBalanceAndPurchase();
@@ -366,6 +388,9 @@
             }
             
             const price = selectedGame === '1000' ? 100 : 50;
+            
+            console.log('💰 Current balance:', userBalance);
+            console.log('💵 Card price:', price);
             
             // Check balance
             if (userBalance < price) {
@@ -382,6 +407,9 @@
         
         async function purchaseCard() {
             const price = selectedGame === '1000' ? 100 : 50;
+            
+            // Show loading state
+            tg.showAlert('Processing purchase...');
             
             // Send to bot via Telegram WebApp
             tg.sendData(JSON.stringify({
@@ -412,7 +440,7 @@
                     window.location.href = 'game.html';
                 }, 1500);
             } catch (error) {
-                console.error('Error saving to localStorage:', error);
+                console.error('❌ Error saving to localStorage:', error);
                 tg.showAlert('Card purchased but failed to save locally');
             }
         }
@@ -430,7 +458,7 @@
         // Load recent purchases
         async function loadRecentCards() {
             if (!userId) {
-                console.log('No user ID for recent cards');
+                console.log('⚠️ No user ID for recent cards');
                 return;
             }
             
@@ -438,11 +466,11 @@
                 const response = await fetch(`/api/user-cards/${userId}`);
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    throw new Error(`HTTP ${response.status}`);
                 }
                 
                 const cards = await response.json();
-                console.log('Recent cards:', cards);
+                console.log('📜 Recent cards:', cards);
                 
                 const recentDiv = document.getElementById('recentCards');
                 if (cards && cards.length > 0) {
@@ -457,7 +485,7 @@
                     recentDiv.innerHTML = '<div class="no-cards">No recent purchases</div>';
                 }
             } catch (error) {
-                console.error('Error loading recent cards:', error);
+                console.error('❌ Error loading recent cards:', error);
                 // Show demo recent cards
                 const recentDiv = document.getElementById('recentCards');
                 recentDiv.innerHTML = `
@@ -476,7 +504,7 @@
         }
         
         // Initialize
-        console.log('Initializing select-card page...');
+        console.log('🚀 Initializing select-card page...');
         loadBalance();
         loadGameStats();
         loadRecentCards();
