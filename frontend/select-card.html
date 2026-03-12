@@ -94,13 +94,48 @@
                 </div>
                 
                 <div class="insufficient-content">
-                    <p>You need <strong id="neededAmount">$50</strong> to purchase this card.</p>
-                    <p>Your current balance: <strong id="currentBalance">$0</strong></p>
-                    <p style="margin-top: 20px; font-size: 14px; color: #666;">Add funds via the bot to continue playing.</p>
+                    <p style="font-size: 18px; margin-bottom: 15px;">You need <strong id="neededAmount">$50</strong> to purchase this card.</p>
+                    <p style="font-size: 16px; margin-bottom: 20px;">Your current balance: <strong id="currentBalance">$0</strong></p>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <p style="color: #666; margin-bottom: 10px;">💡 <strong>How to add funds:</strong></p>
+                        <ol style="text-align: left; padding-left: 20px; color: #666;">
+                            <li>Go back to the bot chat</li>
+                            <li>Click "Add Funds" button</li>
+                            <li>Select an amount ($10, $25, $50, $100)</li>
+                            <li>Return here to purchase</li>
+                        </ol>
+                    </div>
                 </div>
                 
                 <div class="modal-footer">
                     <button class="cancel-btn" onclick="closeInsufficientModal()">Close</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Add Funds Modal (for new users) -->
+        <div class="modal" id="addFundsModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>💰 Add Funds</h3>
+                    <button class="close-btn" onclick="closeAddFundsModal()">✕</button>
+                </div>
+                
+                <div class="add-funds-content">
+                    <p style="margin-bottom: 20px;">Your balance is $0. Add funds to start playing!</p>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 20px 0;">
+                        <button onclick="addFunds(10)" style="padding: 15px; background: #4a90e2; color: white; border: none; border-radius: 8px; font-size: 18px; cursor: pointer;">$10</button>
+                        <button onclick="addFunds(25)" style="padding: 15px; background: #4a90e2; color: white; border: none; border-radius: 8px; font-size: 18px; cursor: pointer;">$25</button>
+                        <button onclick="addFunds(50)" style="padding: 15px; background: #4a90e2; color: white; border: none; border-radius: 8px; font-size: 18px; cursor: pointer;">$50</button>
+                        <button onclick="addFunds(100)" style="padding: 15px; background: #4a90e2; color: white; border: none; border-radius: 8px; font-size: 18px; cursor: pointer;">$100</button>
+                    </div>
+                    
+                    <p style="color: #666; font-size: 14px;">Funds will be added to your account immediately.</p>
+                </div>
+                
+                <div class="modal-footer">
+                    <button class="cancel-btn" onclick="closeAddFundsModal()">Cancel</button>
                 </div>
             </div>
         </div>
@@ -149,6 +184,7 @@
             if (user && user.id) {
                 userId = user.id;
                 console.log('✅ User ID:', userId);
+                document.getElementById('balance').setAttribute('data-user-id', userId);
             } else {
                 console.warn('⚠️ No user ID from Telegram');
                 // For testing/demo mode
@@ -182,6 +218,15 @@
                     userBalance = data.balance;
                     document.getElementById('balance').textContent = `$${data.balance}`;
                     retryCount = 0; // Reset retry count on success
+                    
+                    // If balance is 0, show add funds modal after a short delay
+                    if (userBalance === 0) {
+                        setTimeout(() => {
+                            if (!document.getElementById('addFundsModal').style.display === 'flex') {
+                                showAddFundsModal();
+                            }
+                        }, 1000);
+                    }
                 } else {
                     throw new Error('Invalid balance data');
                 }
@@ -230,6 +275,28 @@
                 document.getElementById('game1000Players').textContent = '2';
                 document.getElementById('prizePool').textContent = '$350';
             }
+        }
+        
+        function showAddFundsModal() {
+            document.getElementById('addFundsModal').style.display = 'flex';
+        }
+        
+        function closeAddFundsModal() {
+            document.getElementById('addFundsModal').style.display = 'none';
+        }
+        
+        function addFunds(amount) {
+            // Send add funds request to bot
+            tg.sendData(JSON.stringify({
+                type: 'ADD_FUNDS',
+                amount: amount
+            }));
+            
+            tg.showAlert(`💰 Request sent to add $${amount} to your balance!`);
+            closeAddFundsModal();
+            
+            // Reload balance after a delay
+            setTimeout(loadBalance, 3000);
         }
         
         function showCards(gameId) {
@@ -392,6 +459,13 @@
             console.log('💰 Current balance:', userBalance);
             console.log('💵 Card price:', price);
             
+            // Check if user has zero balance
+            if (userBalance === 0) {
+                closeModal();
+                showAddFundsModal();
+                return;
+            }
+            
             // Check balance
             if (userBalance < price) {
                 // Show insufficient balance modal
@@ -457,8 +531,22 @@
         
         // Load recent purchases
         async function loadRecentCards() {
-            if (!userId) {
-                console.log('⚠️ No user ID for recent cards');
+            if (!userId || userId === 'demo-user-123') {
+                console.log('⚠️ No valid user ID for recent cards');
+                // Show demo recent cards
+                const recentDiv = document.getElementById('recentCards');
+                recentDiv.innerHTML = `
+                    <div class="recent-item">
+                        <span class="game-badge">#10</span>
+                        <span class="card-badge">Card 4521</span>
+                        <span class="price-badge">$50</span>
+                    </div>
+                    <div class="recent-item">
+                        <span class="game-badge">#16</span>
+                        <span class="card-badge">Card 7834</span>
+                        <span class="price-badge">$50</span>
+                    </div>
+                `;
                 return;
             }
             
@@ -518,6 +606,9 @@
         window.purchaseCard = purchaseCard;
         window.closeModal = closeModal;
         window.closeInsufficientModal = closeInsufficientModal;
+        window.showAddFundsModal = showAddFundsModal;
+        window.closeAddFundsModal = closeAddFundsModal;
+        window.addFunds = addFunds;
     </script>
 </body>
 </html>
