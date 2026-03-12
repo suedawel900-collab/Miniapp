@@ -8,6 +8,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
 
 // Load environment variables
 dotenv.config();
@@ -75,27 +76,64 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Static files - serve HTML files directly
-app.use(express.static(path.join(__dirname, '../frontend')));
-
-// Handle HTML files without extensions
-app.use((req, res, next) => {
-  // If the request is for a path without extension and doesn't start with /api
-  if (!req.path.startsWith('/api') && !req.path.includes('.')) {
-    const possiblePath = path.join(__dirname, '../frontend', req.path + '.html');
-    // Check if the HTML file exists
-    if (require('fs').existsSync(possiblePath)) {
-      return res.sendFile(possiblePath);
-    }
-  }
-  next();
-});
-
 // Clean WEBAPP_URL - remove any trailing slashes
 const rawWebAppUrl = process.env.WEBAPP_URL || 'https://your-app.railway.app';
 const WEBAPP_URL = rawWebAppUrl.replace(/\/+$/, ''); // Remove trailing slashes
 
 console.log(`🌐 WebApp URL configured as: ${WEBAPP_URL}`);
+
+// Static files - serve HTML files directly
+const frontendPath = path.join(__dirname, '../frontend');
+console.log(`📁 Serving static files from: ${frontendPath}`);
+
+// Check if frontend directory exists
+if (!fs.existsSync(frontendPath)) {
+  console.error(`❌ Frontend directory not found at: ${frontendPath}`);
+  // Try alternate path
+  const altPath = path.join(__dirname, 'frontend');
+  console.log(`🔄 Trying alternate path: ${altPath}`);
+  if (fs.existsSync(altPath)) {
+    console.log(`✅ Found frontend at alternate path`);
+    frontendPath = altPath;
+  }
+} else {
+  console.log('✅ Frontend directory found');
+  // List all HTML files
+  const files = fs.readdirSync(frontendPath);
+  const htmlFiles = files.filter(f => f.endsWith('.html'));
+  console.log('📄 Available HTML files:', htmlFiles);
+  
+  // Also check for files in subdirectories
+  htmlFiles.forEach(file => {
+    console.log(`   - /${file} -> ${WEBAPP_URL}/${file}`);
+  });
+}
+
+// Serve static files with proper configuration
+app.use(express.static(frontendPath, {
+  extensions: ['html'], // Allow omitting .html extension
+  index: 'index.html' // Default file for directory
+}));
+
+// Handle HTML files without extensions - redirect to .html
+app.use((req, res, next) => {
+  // Skip if it's an API request or has an extension
+  if (req.path.startsWith('/api') || req.path.includes('.')) {
+    return next();
+  }
+  
+  // Remove leading slash for file check
+  const cleanPath = req.path.startsWith('/') ? req.path.slice(1) : req.path;
+  
+  // Check if the HTML file exists
+  const htmlPath = path.join(frontendPath, cleanPath + '.html');
+  if (fs.existsSync(htmlPath)) {
+    console.log(`🔄 Serving ${req.path} -> ${cleanPath}.html`);
+    return res.sendFile(htmlPath);
+  }
+  
+  next();
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -112,7 +150,12 @@ app.get('/health', (req, res) => {
 
 // Root endpoint - serve index.html
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/index.html'));
+  const indexPath = path.join(frontendPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).json({ error: 'index.html not found' });
+  }
 });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -203,9 +246,11 @@ bot.onText(/\/start/, async (msg) => {
     // Ensure no double slashes in URLs
     const gameUrl = `${WEBAPP_URL}/game.html`;
     const selectCardUrl = `${WEBAPP_URL}/select-card.html`;
+    const adminUrl = `${WEBAPP_URL}/admin.html`;
     
     console.log(`🔗 Game URL: ${gameUrl}`);
     console.log(`🔗 Select Card URL: ${selectCardUrl}`);
+    console.log(`🔗 Admin URL: ${adminUrl}`);
     
     await bot.sendMessage(chatId, 
       `🎯 *Welcome to BIG GTO Bingo, ${user.first_name}!*\n\n` +
@@ -645,6 +690,63 @@ app.get('/api/transactions/:userId', async (req, res) => {
   }
 });
 
+// Debug route to check if HTML files are accessible
+app.get('/api/debug/files', (req, res) => {
+  try {
+    const files = fs.readdirSync(frontendPath);
+    const htmlFiles = files.filter(f => f.endsWith('.html'));
+    
+    const fileStatus = {};
+    htmlFiles.forEach(file => {
+      const filePath = path.join(frontendPath, file);
+      const stats = fs.statSync(filePath);
+      fileStatus[file] = {
+        size: stats.size,
+        exists: true,
+        url: `/${file}`,
+        accessible: fs.accessSync(filePath, fs.constants.R_OK) ? false : true
+      };
+    });
+    
+    res.json({
+      frontendPath,
+      files: htmlFiles,
+      fileStatus,
+      webappUrl: WEBAPP_URL,
+      staticMiddlewareConfigured: true
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Debug route to list all registered endpoints
+app.get('/api/debug/routes', (req, res) => {
+  const routes = [];
+  app._router.stack.forEach((r) => {
+    if (r.route && r.route.path) {
+      routes.push({
+        path: r.route.path,
+        methods: Object.keys(r.route.methods)
+      });
+    }
+  });
+  res.json(routes);
+});
+
+// Debug route to check configuration
+app.get('/api/debug/config', (req, res) => {
+  res.json({
+    webappUrl: WEBAPP_URL,
+    rawWebappUrl: process.env.WEBAPP_URL,
+    nodeEnv: process.env.NODE_ENV,
+    port: process.env.PORT,
+    hasTrailingSlash: WEBAPP_URL.endsWith('/'),
+    frontendPath: frontendPath,
+    frontendExists: fs.existsSync(frontendPath)
+  });
+});
+
 // Admin Routes (protected)
 const adminAuth = (req, res, next) => {
   const adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(',') : [];
@@ -770,31 +872,6 @@ app.get('/api/admin/game-details/:gameId', adminAuth, (req, res) => {
   }
 });
 
-// Debug route to list all registered endpoints
-app.get('/api/debug/routes', (req, res) => {
-  const routes = [];
-  app._router.stack.forEach((r) => {
-    if (r.route && r.route.path) {
-      routes.push({
-        path: r.route.path,
-        methods: Object.keys(r.route.methods)
-      });
-    }
-  });
-  res.json(routes);
-});
-
-// Debug route to check configuration
-app.get('/api/debug/config', (req, res) => {
-  res.json({
-    webappUrl: WEBAPP_URL,
-    rawWebappUrl: process.env.WEBAPP_URL,
-    nodeEnv: process.env.NODE_ENV,
-    port: process.env.PORT,
-    hasTrailingSlash: WEBAPP_URL.endsWith('/')
-  });
-});
-
 // Socket.IO connection handling
 io.on('connection', (socket) => {
   console.log('🔌 Player connected:', socket.id);
@@ -842,6 +919,15 @@ app.use((err, req, res, next) => {
 // 404 handler - log and return JSON
 app.use((req, res) => {
   console.log(`❓ 404 Not Found: ${req.method} ${req.url}`);
+  
+  // Check if this might be an HTML file request
+  if (!req.path.startsWith('/api') && !req.path.includes('.')) {
+    const possibleHtml = path.join(frontendPath, req.path.slice(1) + '.html');
+    if (fs.existsSync(possibleHtml)) {
+      console.log(`⚠️ HTML file exists but wasn't served: ${possibleHtml}`);
+    }
+  }
+  
   res.status(404).json({ 
     error: 'Endpoint not found', 
     path: req.url, 
@@ -866,18 +952,14 @@ server.listen(PORT, '0.0.0.0', () => {
     }
   });
   
-  // Check frontend files
-  const fs = require('fs');
-  const frontendPath = path.join(__dirname, '../frontend');
+  // Check frontend files again
   console.log(`📁 Frontend directory: ${frontendPath}`);
-  
   if (fs.existsSync(frontendPath)) {
     const files = fs.readdirSync(frontendPath);
-    console.log('📄 Frontend files:');
-    files.forEach(file => {
-      if (file.endsWith('.html')) {
-        console.log(`   - ${file} -> ${WEBAPP_URL}/${file}`);
-      }
+    const htmlFiles = files.filter(f => f.endsWith('.html'));
+    console.log('📄 Frontend HTML files:');
+    htmlFiles.forEach(file => {
+      console.log(`   - ${file} -> ${WEBAPP_URL}/${file}`);
     });
   } else {
     console.error('❌ Frontend directory not found!');
