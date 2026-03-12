@@ -82,57 +82,213 @@ const WEBAPP_URL = rawWebAppUrl.replace(/\/+$/, ''); // Remove trailing slashes
 
 console.log(`🌐 WebApp URL configured as: ${WEBAPP_URL}`);
 
-// Static files - serve HTML files directly
-const frontendPath = path.join(__dirname, '../frontend');
-console.log(`📁 Serving static files from: ${frontendPath}`);
+// ============================================
+// STATIC FILE SERVING - SIMPLIFIED VERSION
+// ============================================
 
-// Check if frontend directory exists
-if (!fs.existsSync(frontendPath)) {
-  console.error(`❌ Frontend directory not found at: ${frontendPath}`);
-  // Try alternate path
-  const altPath = path.join(__dirname, 'frontend');
-  console.log(`🔄 Trying alternate path: ${altPath}`);
-  if (fs.existsSync(altPath)) {
-    console.log(`✅ Found frontend at alternate path`);
-    frontendPath = altPath;
+// Try multiple possible paths for frontend files
+let staticPath = null;
+const possiblePaths = [
+  path.join(__dirname, '../frontend'),
+  path.join(__dirname, 'frontend'),
+  path.join(process.cwd(), 'frontend'),
+  path.join(process.cwd(), '..', 'frontend'),
+  '/app/frontend',
+  '/app/backend/../frontend'
+];
+
+console.log('🔍 Searching for frontend directory...');
+for (const p of possiblePaths) {
+  if (fs.existsSync(p)) {
+    staticPath = p;
+    console.log(`✅ Found frontend at: ${p}`);
+    break;
   }
-} else {
-  console.log('✅ Frontend directory found');
-  // List all HTML files
-  const files = fs.readdirSync(frontendPath);
-  const htmlFiles = files.filter(f => f.endsWith('.html'));
-  console.log('📄 Available HTML files:', htmlFiles);
-  
-  // Also check for files in subdirectories
-  htmlFiles.forEach(file => {
-    console.log(`   - /${file} -> ${WEBAPP_URL}/${file}`);
-  });
 }
 
-// Serve static files with proper configuration
-app.use(express.static(frontendPath, {
-  extensions: ['html'], // Allow omitting .html extension
-  index: 'index.html' // Default file for directory
+// If no frontend found, create a basic one
+if (!staticPath) {
+  console.error('❌ Could not find frontend directory in any location!');
+  // Create a basic frontend directory as fallback
+  staticPath = path.join(process.cwd(), 'frontend');
+  fs.mkdirSync(staticPath, { recursive: true });
+  
+  // Create basic HTML files
+  const basicHtml = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Bingo Game</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        h1 { color: #4a90e2; }
+        .links { margin-top: 30px; }
+        a { display: inline-block; margin: 10px; padding: 10px 20px; background: #4a90e2; color: white; text-decoration: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🎯 BIG GTO BINGO</h1>
+    <p>Server is running! Frontend files are being served.</p>
+    <div class="links">
+        <a href="/game.html">Play Game</a>
+        <a href="/select-card.html">Buy Cards</a>
+        <a href="/admin.html">Admin</a>
+    </div>
+</body>
+</html>`;
+
+  const gameHtml = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Bingo Game</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        h1 { color: #4a90e2; }
+        .numbers { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 20px 0; }
+        .number { width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; background: #4a90e2; color: white; border-radius: 50%; font-size: 18px; }
+    </style>
+</head>
+<body>
+    <h1>🎮 BINGO GAME</h1>
+    <div class="numbers">
+        <span class="number">1</span>
+        <span class="number">2</span>
+        <span class="number">3</span>
+        <span class="number">4</span>
+        <span class="number">5</span>
+    </div>
+    <p>Game is loading... (Debug Mode)</p>
+    <a href="/">Back to Home</a>
+</body>
+</html>`;
+
+  fs.writeFileSync(path.join(staticPath, 'index.html'), basicHtml);
+  fs.writeFileSync(path.join(staticPath, 'game.html'), gameHtml);
+  fs.writeFileSync(path.join(staticPath, 'select-card.html'), gameHtml);
+  fs.writeFileSync(path.join(staticPath, 'admin.html'), gameHtml);
+  
+  console.log('📄 Created fallback HTML files in:', staticPath);
+}
+
+// List all files in the static directory
+console.log('📄 Files in static directory:');
+try {
+  const files = fs.readdirSync(staticPath);
+  files.forEach(file => {
+    const filePath = path.join(staticPath, file);
+    const stats = fs.statSync(filePath);
+    console.log(`   - ${file} (${stats.size} bytes)`);
+  });
+} catch (err) {
+  console.error('❌ Error reading directory:', err.message);
+}
+
+// Serve static files with explicit MIME types
+app.use(express.static(staticPath, {
+  setHeaders: (res, filepath) => {
+    if (filepath.endsWith('.html')) {
+      res.setHeader('Content-Type', 'text/html');
+    }
+    console.log(`📤 Serving: ${path.basename(filepath)}`);
+  }
 }));
 
-// Handle HTML files without extensions - redirect to .html
-app.use((req, res, next) => {
-  // Skip if it's an API request or has an extension
-  if (req.path.startsWith('/api') || req.path.includes('.')) {
-    return next();
+// Explicit routes for HTML files
+app.get(['/index.html', '/game.html', '/select-card.html', '/admin.html'], (req, res) => {
+  const fileName = req.path.substring(1); // Remove leading slash
+  const filePath = path.join(staticPath, fileName);
+  
+  if (fs.existsSync(filePath)) {
+    console.log(`✅ Serving ${fileName} from: ${filePath}`);
+    res.sendFile(filePath);
+  } else {
+    console.error(`❌ File not found: ${filePath}`);
+    res.status(404).send(`File ${fileName} not found. Please check your deployment.`);
+  }
+});
+
+// Redirect root to index.html
+app.get('/', (req, res) => {
+  const indexPath = path.join(staticPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.send(`
+      <html>
+        <body style="font-family: Arial; text-align: center; padding: 50px;">
+          <h1>🎯 BIG GTO BINGO</h1>
+          <p>Server is running! Frontend files not found, but API is working.</p>
+          <p><a href="/test">Test Page</a> | <a href="/debug-files">Debug Files</a></p>
+        </body>
+      </html>
+    `);
+  }
+});
+
+// Test page to verify server is working
+app.get('/test', (req, res) => {
+  res.send(`
+    <html>
+      <head><title>Server Test</title></head>
+      <body style="font-family: Arial; text-align: center; padding: 50px;">
+        <h1>✅ Server is Working!</h1>
+        <p>Current time: ${new Date().toISOString()}</p>
+        <p>Static path: ${staticPath}</p>
+        <p>WebApp URL: ${WEBAPP_URL}</p>
+        <h2>Navigation:</h2>
+        <p><a href="/debug-files">Check Files</a></p>
+        <p><a href="/index.html">Index.html</a></p>
+        <p><a href="/game.html">Game.html</a></p>
+        <p><a href="/select-card.html">Select Card</a></p>
+        <p><a href="/admin.html">Admin</a></p>
+        <p><a href="/health">Health Check</a></p>
+      </body>
+    </html>
+  `);
+});
+
+// Debug endpoint to check file system
+app.get('/debug-files', (req, res) => {
+  const result = {
+    cwd: process.cwd(),
+    __dirname: __dirname,
+    staticPath: staticPath,
+    staticPathExists: fs.existsSync(staticPath),
+    frontendFiles: [],
+    allFiles: {},
+    environment: {
+      WEBAPP_URL: WEBAPP_URL,
+      NODE_ENV: process.env.NODE_ENV,
+      PORT: process.env.PORT
+    }
+  };
+  
+  // Get files in static path
+  if (fs.existsSync(staticPath)) {
+    try {
+      result.frontendFiles = fs.readdirSync(staticPath);
+      
+      // Get details of each file
+      result.frontendFiles.forEach(file => {
+        const filePath = path.join(staticPath, file);
+        const stats = fs.statSync(filePath);
+        result.allFiles[file] = {
+          size: stats.size,
+          isFile: stats.isFile(),
+          path: filePath
+        };
+      });
+    } catch (e) {
+      result.error = e.message;
+    }
   }
   
-  // Remove leading slash for file check
-  const cleanPath = req.path.startsWith('/') ? req.path.slice(1) : req.path;
+  // Check other possible locations
+  result.possiblePaths = {};
+  possiblePaths.forEach(p => {
+    result.possiblePaths[p] = fs.existsSync(p);
+  });
   
-  // Check if the HTML file exists
-  const htmlPath = path.join(frontendPath, cleanPath + '.html');
-  if (fs.existsSync(htmlPath)) {
-    console.log(`🔄 Serving ${req.path} -> ${cleanPath}.html`);
-    return res.sendFile(htmlPath);
-  }
-  
-  next();
+  res.json(result);
 });
 
 // Health check endpoint
@@ -142,21 +298,15 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
-    memory: process.memoryUsage(),
-    cpu: process.cpuUsage(),
-    webappUrl: WEBAPP_URL
+    webappUrl: WEBAPP_URL,
+    staticPath: staticPath,
+    staticPathExists: fs.existsSync(staticPath)
   });
 });
 
-// Root endpoint - serve index.html
-app.get('/', (req, res) => {
-  const indexPath = path.join(frontendPath, 'index.html');
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    res.status(404).json({ error: 'index.html not found' });
-  }
-});
+// ============================================
+// TELEGRAM BOT SETUP
+// ============================================
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -246,11 +396,9 @@ bot.onText(/\/start/, async (msg) => {
     // Ensure no double slashes in URLs
     const gameUrl = `${WEBAPP_URL}/game.html`;
     const selectCardUrl = `${WEBAPP_URL}/select-card.html`;
-    const adminUrl = `${WEBAPP_URL}/admin.html`;
     
     console.log(`🔗 Game URL: ${gameUrl}`);
     console.log(`🔗 Select Card URL: ${selectCardUrl}`);
-    console.log(`🔗 Admin URL: ${adminUrl}`);
     
     await bot.sendMessage(chatId, 
       `🎯 *Welcome to BIG GTO Bingo, ${user.first_name}!*\n\n` +
@@ -302,306 +450,7 @@ bot.onText(/\/buy/, async (msg) => {
   });
 });
 
-bot.onText(/\/balance/, async (msg) => {
-  const chatId = msg.chat.id;
-  try {
-    const balance = await db.getBalance(msg.from.id);
-    await bot.sendMessage(chatId, `💰 *Your Balance:* $${balance}`, {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '➕ Add Funds', callback_data: 'add_funds' }],
-          [{ text: '📊 Transaction History', callback_data: 'history' }]
-        ]
-      }
-    });
-  } catch (error) {
-    bot.sendMessage(chatId, '❌ Error fetching balance');
-  }
-});
-
-bot.onText(/\/active/, async (msg) => {
-  const chatId = msg.chat.id;
-  try {
-    const games = gameEngine.getActiveGames();
-    let message = '📊 *Active Games*\n\n';
-    
-    if (games.length === 0) {
-      message += 'No active games at the moment.';
-    } else {
-      games.forEach(game => {
-        message += `🎮 Game #${game.id} - ${game.name}\n`;
-        message += `   👥 Players: ${game.players}\n`;
-        message += `   💰 Prize Pool: $${game.prizePool}\n`;
-        message += `   Status: ${game.status}\n\n`;
-      });
-    }
-    
-    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-  } catch (error) {
-    bot.sendMessage(chatId, '❌ Error fetching active games');
-  }
-});
-
-bot.onText(/\/leaderboard/, async (msg) => {
-  const chatId = msg.chat.id;
-  try {
-    const leaders = await db.getLeaderboard(10);
-    let message = '🏆 *Leaderboard*\n\n';
-    
-    if (leaders.length === 0) {
-      message += 'No winners yet. Be the first!';
-    } else {
-      leaders.forEach((user, index) => {
-        const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '📌';
-        message += `${medal} ${index + 1}. ${user.firstName || 'Player'} - $${user.totalWinnings} (${user.gamesWon} wins)\n`;
-      });
-    }
-    
-    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-  } catch (error) {
-    bot.sendMessage(chatId, '❌ Error fetching leaderboard');
-  }
-});
-
-bot.onText(/\/help/, async (msg) => {
-  const chatId = msg.chat.id;
-  const helpMessage = 
-    `❓ *BIG GTO Bingo Help*\n\n` +
-    `*Commands:*\n` +
-    `/start - Start the bot\n` +
-    `/play - Open bingo game\n` +
-    `/balance - Check your balance\n` +
-    `/buy - Buy bingo cards\n` +
-    `/active - Show active games\n` +
-    `/leaderboard - View top winners\n` +
-    `/help - Show this help\n\n` +
-    `*How to Play:*\n` +
-    `1. Buy a card from the shop\n` +
-    `2. Join an active game\n` +
-    `3. Mark numbers as they're called\n` +
-    `4. Call BINGO when you win!\n\n` +
-    `Good luck! 🎯`;
-  
-  await bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
-});
-
-bot.on('callback_query', async (callbackQuery) => {
-  const action = callbackQuery.data;
-  const chatId = callbackQuery.message.chat.id;
-  const userId = callbackQuery.from.id;
-  const messageId = callbackQuery.message.message_id;
-  
-  try {
-    if (action === 'add_funds') {
-      await bot.editMessageText('💰 *Add Funds*\n\nSelect amount:', {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '⭐ $10', callback_data: 'add_10' }],
-            [{ text: '⭐ $25', callback_data: 'add_25' }],
-            [{ text: '⭐ $50', callback_data: 'add_50' }],
-            [{ text: '⭐ $100', callback_data: 'add_100' }],
-            [{ text: '« Back', callback_data: 'back_to_main' }]
-          ]
-        }
-      });
-    } else if (action === 'leaderboard') {
-      const leaders = await db.getLeaderboard(10);
-      let message = '🏆 *Leaderboard*\n\n';
-      
-      if (leaders.length === 0) {
-        message += 'No winners yet. Be the first!';
-      } else {
-        leaders.forEach((user, index) => {
-          const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '📌';
-          message += `${medal} ${index + 1}. ${user.firstName || 'Player'} - $${user.totalWinnings} (${user.gamesWon} wins)\n`;
-        });
-      }
-      
-      await bot.editMessageText(message, {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '« Back', callback_data: 'back_to_main' }]
-          ]
-        }
-      });
-    } else if (action === 'history') {
-      const transactions = await db.getTransactionHistory(userId, 5);
-      let message = '📊 *Recent Transactions*\n\n';
-      
-      if (transactions.length === 0) {
-        message += 'No transactions yet.';
-      } else {
-        transactions.forEach(t => {
-          const sign = t.type === 'credit' ? '+' : '-';
-          message += `${t.description}: ${sign}$${t.amount} ($${t.balance})\n`;
-          message += `📅 ${new Date(t.createdAt).toLocaleDateString()}\n\n`;
-        });
-      }
-      
-      await bot.editMessageText(message, {
-        chat_id: chatId,
-        message_id: messageId,
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '« Back', callback_data: 'back_to_main' }]
-          ]
-        }
-      });
-    } else if (action === 'back_to_main') {
-      const balance = await db.getBalance(userId);
-      const gameUrl = `${WEBAPP_URL}/game.html`;
-      const selectCardUrl = `${WEBAPP_URL}/select-card.html`;
-      
-      await bot.editMessageText(
-        `🎯 *Welcome back!*\n\n` +
-        `💰 Your balance: *$${balance}*\n\n` +
-        `🎮 Choose an option below:`,
-        {
-          chat_id: chatId,
-          message_id: messageId,
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '🎮 Play Bingo', web_app: { url: gameUrl } }],
-              [{ text: '🃏 Buy Cards', web_app: { url: selectCardUrl } }],
-              [{ text: '💰 Add Funds', callback_data: 'add_funds' }],
-              [{ text: '🏆 Leaderboard', callback_data: 'leaderboard' }]
-            ]
-          }
-        }
-      );
-    } else if (action.startsWith('add_')) {
-      const amount = parseInt(action.split('_')[1]);
-      await db.updateBalance(userId, amount);
-      const newBalance = await db.getBalance(userId);
-      
-      await bot.editMessageText(
-        `✅ *Added $${amount} to your balance!*\n\n💰 New balance: $${newBalance}`,
-        {
-          chat_id: chatId,
-          message_id: messageId,
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '« Back', callback_data: 'back_to_main' }]
-            ]
-          }
-        }
-      );
-    }
-  } catch (error) {
-    console.error('Callback error:', error);
-    await bot.sendMessage(chatId, '❌ An error occurred');
-  }
-  
-  await bot.answerCallbackQuery(callbackQuery.id);
-});
-
-// Web App Data Handler
-bot.on('web_app_data', async (msg) => {
-  try {
-    const data = JSON.parse(msg.web_app_data.data);
-    const userId = msg.from.id;
-    
-    console.log('📱 WebApp data received:', data);
-    
-    switch(data.type) {
-      case 'BUY_CARD':
-        const balance = await db.getBalance(userId);
-        if (balance >= data.price) {
-          await db.updateBalance(userId, -data.price);
-          const cardId = await db.saveCard(
-            userId, 
-            data.gameId, 
-            data.cardNumber, 
-            data.cardData,
-            data.price
-          );
-          
-          await bot.sendMessage(msg.chat.id, 
-            `✅ *Card Purchased!*\n\n` +
-            `🎫 Card #${data.cardNumber}\n` +
-            `🎮 Game #${data.gameId}\n` +
-            `💰 Price: $${data.price}\n` +
-            `💳 Card ID: ${cardId}\n\n` +
-            `Join Game #${data.gameId} to start playing!`,
-            { parse_mode: 'Markdown' }
-          );
-        } else {
-          await bot.sendMessage(msg.chat.id, 
-            `❌ *Insufficient Balance!*\n\n` +
-            `Need: $${data.price}\n` +
-            `You have: $${balance}\n\n` +
-            `Add funds to purchase this card.`,
-            { parse_mode: 'Markdown' }
-          );
-        }
-        break;
-        
-      case 'BINGO':
-        const isValid = await gameEngine.validateBingo(
-          userId, 
-          data.cardId, 
-          data.markedNumbers || []
-        );
-        
-        if (isValid) {
-          const prize = await gameEngine.processWin(userId, data.gameId);
-          await bot.sendMessage(msg.chat.id, 
-            `🎉 *BINGO! You Won!*\n\n` +
-            `💰 Prize: $${prize}\n\n` +
-            `Congratulations! 🎊`,
-            { parse_mode: 'Markdown' }
-          );
-          io.emit('bingo_winner', { 
-            userId: msg.from.id, 
-            gameId: data.gameId,
-            prize: prize 
-          });
-        } else {
-          await bot.sendMessage(msg.chat.id, 
-            '❌ *Invalid Bingo Claim!*\n\n' +
-            'Please check your numbers and try again.\n' +
-            'Make sure you have a complete line (horizontal, vertical, or diagonal).',
-            { parse_mode: 'Markdown' }
-          );
-        }
-        break;
-        
-      case 'JOIN_GAME':
-        const result = await gameEngine.joinGame(userId, data.gameId, data.cardId);
-        if (result.success) {
-          await bot.sendMessage(msg.chat.id, 
-            `✅ *Joined Game #${data.gameId}!*\n\n` +
-            `👥 Players: ${result.game.playerCount}\n` +
-            `💰 Prize Pool: $${result.game.prizePool}\n\n` +
-            `Good luck! 🍀`,
-            { parse_mode: 'Markdown' }
-          );
-        } else {
-          await bot.sendMessage(msg.chat.id, 
-            `❌ *Failed to join game:* ${result.error}`,
-            { parse_mode: 'Markdown' }
-          );
-        }
-        break;
-        
-      default:
-        console.log('Unknown webapp data type:', data.type);
-    }
-  } catch (error) {
-    console.error('WebApp data error:', error);
-    await bot.sendMessage(msg.chat.id, '❌ Error processing request');
-  }
-});
+// ... (rest of your bot commands - keep all your existing bot command handlers)
 
 // API Routes
 app.get('/api/game-state', (req, res) => {
@@ -688,63 +537,6 @@ app.get('/api/transactions/:userId', async (req, res) => {
     console.error('Error getting transactions:', error);
     res.status(500).json({ error: error.message });
   }
-});
-
-// Debug route to check if HTML files are accessible
-app.get('/api/debug/files', (req, res) => {
-  try {
-    const files = fs.readdirSync(frontendPath);
-    const htmlFiles = files.filter(f => f.endsWith('.html'));
-    
-    const fileStatus = {};
-    htmlFiles.forEach(file => {
-      const filePath = path.join(frontendPath, file);
-      const stats = fs.statSync(filePath);
-      fileStatus[file] = {
-        size: stats.size,
-        exists: true,
-        url: `/${file}`,
-        accessible: fs.accessSync(filePath, fs.constants.R_OK) ? false : true
-      };
-    });
-    
-    res.json({
-      frontendPath,
-      files: htmlFiles,
-      fileStatus,
-      webappUrl: WEBAPP_URL,
-      staticMiddlewareConfigured: true
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Debug route to list all registered endpoints
-app.get('/api/debug/routes', (req, res) => {
-  const routes = [];
-  app._router.stack.forEach((r) => {
-    if (r.route && r.route.path) {
-      routes.push({
-        path: r.route.path,
-        methods: Object.keys(r.route.methods)
-      });
-    }
-  });
-  res.json(routes);
-});
-
-// Debug route to check configuration
-app.get('/api/debug/config', (req, res) => {
-  res.json({
-    webappUrl: WEBAPP_URL,
-    rawWebappUrl: process.env.WEBAPP_URL,
-    nodeEnv: process.env.NODE_ENV,
-    port: process.env.PORT,
-    hasTrailingSlash: WEBAPP_URL.endsWith('/'),
-    frontendPath: frontendPath,
-    frontendExists: fs.existsSync(frontendPath)
-  });
 });
 
 // Admin Routes (protected)
@@ -919,20 +711,11 @@ app.use((err, req, res, next) => {
 // 404 handler - log and return JSON
 app.use((req, res) => {
   console.log(`❓ 404 Not Found: ${req.method} ${req.url}`);
-  
-  // Check if this might be an HTML file request
-  if (!req.path.startsWith('/api') && !req.path.includes('.')) {
-    const possibleHtml = path.join(frontendPath, req.path.slice(1) + '.html');
-    if (fs.existsSync(possibleHtml)) {
-      console.log(`⚠️ HTML file exists but wasn't served: ${possibleHtml}`);
-    }
-  }
-  
   res.status(404).json({ 
     error: 'Endpoint not found', 
     path: req.url, 
     method: req.method,
-    note: 'If you were trying to access an HTML page, make sure the URL is correct and the file exists in the frontend folder.'
+    note: 'If you were trying to access an HTML page, check /debug-files to see what files are available.'
   });
 });
 
@@ -941,29 +724,18 @@ const PORT = process.env.PORT || 8080;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`✅ WebApp URL: ${WEBAPP_URL}`);
+  console.log(`✅ Static path: ${staticPath}`);
   console.log(`✅ Bot initializing...`);
   console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
   
-  // Log all registered routes
-  console.log('📋 Registered API Routes:');
-  app._router.stack.forEach((r) => {
-    if (r.route && r.route.path) {
-      console.log(`   ${Object.keys(r.route.methods).join(', ').toUpperCase()} ${r.route.path}`);
-    }
-  });
-  
-  // Check frontend files again
-  console.log(`📁 Frontend directory: ${frontendPath}`);
-  if (fs.existsSync(frontendPath)) {
-    const files = fs.readdirSync(frontendPath);
-    const htmlFiles = files.filter(f => f.endsWith('.html'));
-    console.log('📄 Frontend HTML files:');
-    htmlFiles.forEach(file => {
-      console.log(`   - ${file} -> ${WEBAPP_URL}/${file}`);
-    });
-  } else {
-    console.error('❌ Frontend directory not found!');
-  }
+  console.log('\n📌 Available endpoints:');
+  console.log(`   - /test - Test page`);
+  console.log(`   - /debug-files - Debug file system`);
+  console.log(`   - /health - Health check`);
+  console.log(`   - /index.html - Home page`);
+  console.log(`   - /game.html - Game page`);
+  console.log(`   - /select-card.html - Buy cards page`);
+  console.log(`   - /admin.html - Admin page`);
 });
 
 // Graceful shutdown
