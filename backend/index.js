@@ -953,7 +953,10 @@ bot.on('web_app_data', async (msg) => {
   }
 });
 
-// API Routes
+// ============================================
+// API ROUTES
+// ============================================
+
 app.get('/api/game-state', (req, res) => {
   try {
     const state = gameEngine.getGameState();
@@ -964,12 +967,30 @@ app.get('/api/game-state', (req, res) => {
   }
 });
 
+// UPDATED: Auto-register user if not found
 app.get('/api/user-balance/:userId', async (req, res) => {
   try {
-    const balance = await db.getBalance(req.params.userId);
+    const userId = req.params.userId;
+    
+    // Check if user exists
+    const userExists = await new Promise((resolve) => {
+      db.db.get('SELECT userId FROM users WHERE userId = ?', [userId], (err, row) => {
+        resolve(!!row);
+      });
+    });
+
+    let balance;
+    if (!userExists) {
+      console.log(`🆕 User ${userId} not found, registering with default balance`);
+      await db.registerUser(userId, 'Player', '');
+      balance = 1000;
+    } else {
+      balance = await db.getBalance(userId);
+    }
+    
     res.json({ balance });
   } catch (error) {
-    console.error('Error getting balance:', error);
+    console.error('❌ Error in /api/user-balance:', error);
     res.status(500).json({ error: error.message });
   }
 });
