@@ -17,6 +17,13 @@ class BingoGame {
         const tg = window.Telegram.WebApp;
         this.userId = tg.initDataUnsafe.user?.id;
         
+        if (!this.userId) {
+            console.warn('⚠️ No Telegram user ID – balance will not be fetched');
+            document.getElementById('balance').textContent = '⚠️ Not in Telegram';
+        } else {
+            console.log('✅ User ID:', this.userId);
+        }
+        
         // Load saved card
         const savedCard = localStorage.getItem('currentCard');
         if (savedCard) {
@@ -93,14 +100,25 @@ class BingoGame {
     }
     
     async loadBalance() {
-        if (!this.userId) return;
+        const balanceEl = document.getElementById('balance');
+        if (!balanceEl) return;
+
+        if (!this.userId) {
+            balanceEl.textContent = '⚠️ No user ID';
+            return;
+        }
         
         try {
             const response = await fetch(`/api/user-balance/${this.userId}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
             const data = await response.json();
-            document.getElementById('balance').textContent = `$${data.balance}`;
+            console.log('💰 Balance data:', data);
+            balanceEl.textContent = `$${data.balance}`;
         } catch (error) {
-            console.error('Error loading balance:', error);
+            console.error('❌ Error loading balance:', error);
+            balanceEl.textContent = '⚠️ Error';
         }
     }
     
