@@ -1,3 +1,44 @@
+.cards-grid {
+    display: flex;
+    overflow-x: auto;
+    gap: 15px;
+    padding: 10px 0;
+    scroll-snap-type: x mandatory;
+}
+.card-wrapper {
+    min-width: 280px;
+    background: var(--tg-theme-secondary-bg-color, white);
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: var(--box-shadow);
+    scroll-snap-align: start;
+}
+.card-header-mini {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: var(--primary-color);
+}
+.bingo-card.mini .bingo-row .number {
+    width: 35px;
+    height: 35px;
+    font-size: 14px;
+}
+.bin-card.mini .bin-row {
+    font-size: 14px;
+    padding: 6px;
+}
+.special-card.mini .special-number {
+    width: 35px;
+    height: 35px;
+    font-size: 14px;
+}
+.no-cards {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -1115,37 +1156,4 @@ h3 {
     .admin-select, .admin-input {
         width: 100%;
     }
-}
-
-/* Loading States */
-.loading {
-    opacity: 0.5;
-    pointer-events: none;
-    position: relative;
-}
-
-.loading::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 30px;
-    height: 30px;
-    border: 3px solid #f3f3f3;
-    border-top-color: var(--primary-color);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-/* Telegram Theme Support */
-:root {
-    --tg-theme-bg-color: #f5f5f5;
-    --tg-theme-text-color: #333;
-    --tg-theme-button-color: #4a90e2;
-    --tg-theme-button-text-color: #fff;
-    --tg-theme-secondary-bg-color: #fff;
 }
